@@ -1,7 +1,7 @@
 {
   "domain": "alphaess_modbus",
   "name": "AlphaESS Modbus TCP",
-  "after_dependencies": ["frontend", "http"],
+  "after_dependencies": ["frontend", "http", "lovelace"],
   "codeowners": ["@senalse"],
   "config_flow": true,
   "documentation": "https://github.com/senalse/ha-alphaess-modbus",
@@ -9,5 +9,5 @@
   "iot_class": "local_polling",
   "issue_tracker": "https://github.com/senalse/ha-alphaess-modbus/issues",
   "requirements": ["pymodbus>=3.7.4"],
-  "version": "1.19.2"
+  "version": "1.19.3b3"
 }

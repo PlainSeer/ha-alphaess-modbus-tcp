@@ -54,11 +54,16 @@ This makes it the default **AlphaESS integration dashboard**, without changing y
 
 ## Stable managed dashboard
 
+Battery power is labelled **Charging**, **Discharging** or **Idle**. This is a
+display clarification only; signed sensor values and inverter controls are unchanged.
+
 Overview, Controls (including Peak Shaving) and Diagnostics, with automatic entity
 discovery and no extra custom-card dependencies. Add it once; the layout follows
 integration updates after restart and frontend refresh. Existing dashboards are
 not overwritten, and viewing it does not enable inverter controls.
 Diagnostics uses compact name/value rows in two columns of panels, stacking on phones.
+In storage mode, the integration maintains its own versioned dashboard resource as a second loading path. Refresh the frontend after updates; YAML resources remain user-managed.
+Diagnostic builds include a loading report to help investigate frontend failures without collecting entity values.
 
 [Dashboard setup and replacement guide](https://github.com/PlainSeer/ha-alphaess-modbus/blob/main/docs/managed-dashboard.md).
 

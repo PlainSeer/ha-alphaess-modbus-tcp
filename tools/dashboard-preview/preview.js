@@ -1,5 +1,5 @@
 // Local documentation fixture. Never connects to Home Assistant or an inverter.
-import {OVERVIEW,CONTROLS,discoverDevices,groupsFor} from '../../custom_components/alphaess_modbus/frontend/alphaess-dashboard.js';
+import {OVERVIEW,CONTROLS,discoverDevices,groupsFor} from '../../custom_components/alphaess_modbus/frontend/alphaess-dashboard-content.js';
 // HA supplies ha-icon in production; use the same public MDI font in this fixture.
 class PreviewIcon extends HTMLElement {
  connectedCallback(){const span=document.createElement('span');span.className=this.getAttribute('icon').replace('mdi:','mdi mdi-');span.style.fontSize='26px';span.setAttribute('aria-hidden','true');this.replaceChildren(span);}

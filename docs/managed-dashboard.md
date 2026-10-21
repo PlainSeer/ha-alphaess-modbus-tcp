@@ -15,6 +15,11 @@ repeated icons. Full names appear on the left and values on the right; long name
 wrap on narrow screens. The two panel columns stack on phones.
 No third-party dashboard cards are required.
 
+Battery power shows **Charging** for negative readings, **Discharging** for
+positive readings, and **Idle** at zero in Overview and Diagnostics. The displayed
+magnitude keeps the sensor's unit; the underlying signed sensor value, history
+and inverter controls are unchanged.
+
 ## Examples
 
 These screenshots use invented values and the actual bundled card in a local
@@ -41,8 +46,38 @@ strategy:
   type: custom:alphaess-modbus
 ```
 
-The integration registers its frontend module automatically. No resource URL or
-separate HACS frontend download is needed. If the strategy is not available,
+The integration registers its frontend module automatically. In storage resource
+mode, it also creates or updates its own versioned Lovelace module resource as a
+second loading path. Both paths use the same URL. It preserves existing resource
+IDs and leaves unrelated resources and dashboard configurations alone. No separate
+HACS frontend download is needed. YAML-managed resources are not modified; those
+installations retain the extra-frontend-module loading path.
+
+This fallback helps when the initial frontend module was missed. HA still starts
+resources asynchronously and has a five-second strategy-registration timeout.
+The diagnostic loader registers the strategies before importing the main dashboard
+module. If that import fails or remains pending for eight seconds, it returns a
+built-in Markdown report instead of depending on a custom card to display errors.
+Already-open browser sessions need a full refresh after installing the update.
+
+### Loading diagnostics
+
+Diagnostic builds include a **Loader diagnostics** view when loading succeeds, or
+a diagnostic report when the main module fails. The report shows the loader version,
+relative timing, module execution stages, element registration and a bounded error
+message. Server URLs are redacted; no entity values, credentials or stack traces are
+collected. Nothing is uploaded, stored or sent to HA by the diagnostic loader.
+Take a screenshot of the report when reporting a failure.
+
+If HA's original plain strategy-registration timeout still appears, the diagnostic
+loader itself did not register in time. It cannot report its own download or parse
+failure. Successful loading on another device does not establish why that failed.
+Imports are shared, with no automatic retry loop. Refresh to start a fresh attempt;
+if a slow import finishes after the report appeared, revisit the dashboard.
+
+If you uninstall the integration, also remove its `/alphaess_modbus/alphaess-dashboard.js`
+resource from dashboard resources; removing only a dashboard does not require this.
+If the strategy is not available,
 refresh the frontend after restarting HA and check the logs for
 `Could not load optional AlphaESS dashboard module`.
 

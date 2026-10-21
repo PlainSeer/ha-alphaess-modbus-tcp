@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
 const dom=new JSDOM('<!doctype html><html><body></body></html>');
 for(const key of ['window','document','HTMLElement','customElements','CustomEvent']) globalThis[key]=dom.window[key];
-const mod=await import('../../custom_components/alphaess_modbus/frontend/alphaess-dashboard.js');
+const mod=await import('../../custom_components/alphaess_modbus/frontend/alphaess-dashboard-content.js');
 const {discoverDevices,groupsFor,presentation,AlphaESSDashboardStrategy:Dashboard,AlphaESSViewStrategy:View}=mod;
 const entity=(key,domain='sensor',entry='first',device='one',extra={})=>({entity_id:`${domain}.renamed_${entry}_${key}`,unique_id:`${entry}_${key}`,platform:'alphaess_modbus',config_entry_id:entry,device_id:device,...extra});
 const devices=[{id:'one',name:'Roof'},{id:'two',name_by_user:'Garage'}];
@@ -33,7 +33,14 @@ test('controls include peak and remaining controls once; omit disabled controls'
 });
 test('format missing states, negative battery direction and grid export',()=>{
  for(const state of [undefined,{state:null},{state:'unknown'},{state:'unavailable'}])assert.equal(presentation(state,{}).value,'Unavailable');
- assert.equal(presentation({state:'-1450',attributes:{unit_of_measurement:'W'}},{color:'battery'}).value,'-1,450');
+ assert.equal(presentation({state:'-1450',attributes:{unit_of_measurement:'W'}},{color:'battery'}).value,'Charging 1,450');
+ assert.equal(presentation({state:'1450',attributes:{unit_of_measurement:'W'}},{color:'battery'}).value,'Discharging 1,450');
+ assert.deepEqual(presentation({state:'0',attributes:{unit_of_measurement:'W'}},{color:'battery'}),{value:'Idle',unit:'',color:'#9e9e9e'});
+ assert.equal(presentation({state:'-1.45',attributes:{unit_of_measurement:'kW'}},{color:'battery'}).value,'Charging 1.45');
+ const unavailable=presentation({state:'unavailable'},{color:'battery'});
+ assert.equal(unavailable.value,'Unavailable');
+ const device=discoverDevices([entity('power_battery')],devices,'one')[0];
+ assert.equal(mod.diagnosticGroups(device).flatMap(g=>g.items)[0].color,'battery');
  assert.equal(presentation({state:'-500',attributes:{unit_of_measurement:'W'}},{color:'grid'}).value,'Export 500');
  assert.equal(presentation({state:'off'},{domain:'switch'}).value,'Off');
 });
@@ -55,7 +62,7 @@ test('incomplete energy day is visible without hover; no stale state after unava
  h.states={};card.hass=h;assert.equal(card.shadowRoot.querySelector('.status').hidden,true);assert.match(card.shadowRoot.textContent,/Unavailable/);
 });
 test('module reload does not double-register custom elements or picker entries',async()=>{
- await import('../../custom_components/alphaess_modbus/frontend/alphaess-dashboard.js?reload=1');
+ await import('../../custom_components/alphaess_modbus/frontend/alphaess-dashboard-content.js?reload=1');
  assert.equal(window.customStrategies.filter(s=>s.type==='alphaess-modbus').length,1);
 });
 
