@@ -88,9 +88,9 @@ def build_dashboard(entities, devices):
                 readings.append(_entities(title, rows))
         controls, used = [], set()
         for key, title in [("force_charging", "Force charging"), ("force_discharging", "Force discharging"),
-                           ("force_export", "Force export"), ("force_import", "Force import"),
-                           ("peak_shaving", "Peak shaving"), ("excess_export", "Excess export"),
-                           ("dispatch", "Dispatch")]:
+                           ("dispatch", "Dispatch"), ("force_import", "Force import"),
+                           ("force_export", "Force export"), ("excess_export", "Excess export"),
+                           ("peak_shaving", "Peak shaving")]:
             rows = []
             for (domain, stable), e in indexed.items():
                 if stable != key and not stable.startswith(key + "_"):
