@@ -29,7 +29,7 @@ These passive sensors use data already read by the integration, without adding r
 
 **Off by default and after restart.** Uses existing dispatch controls to reduce grid import towards a target when explicitly enabled. Simulation-tested, not yet tested on physical inverter hardware; it cannot guarantee a hard import cap or prevent transient export. See the [feature guide and limitations](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/main/docs/peak-shaving.md).
 
-Hillview's Force Import pause/resume, Cutoff SoC Hold monitoring and optional PV energy registers are not included. See the [feature comparison](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/main/docs/hillview-parity.md) for supported features and differences.
+See the [feature comparison](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/main/docs/hillview-parity.md) for supported features and differences.
 
 ## Default saved dashboard
 

@@ -74,7 +74,7 @@ Energy estimates can have gaps and do not automatically replace existing helpers
 
 [Optional Peak Shaving](docs/peak-shaving.md) uses existing dispatch controls when explicitly enabled. It is **off by default and after restart**, simulation-tested rather than hardware-tested, and cannot guarantee a hard import cap.
 
-Hillview's Force Import pause/resume, Cutoff SoC Hold monitoring and optional PV energy registers are not included. See the [feature comparison](docs/hillview-parity.md) for supported features and differences.
+See the [feature comparison](docs/hillview-parity.md) for supported features and differences.
 
 ### Validation
 
