@@ -26,7 +26,7 @@ No cloud account required. All communication is direct to the inverter on your l
 
 ## Dashboard preview
 
-**v1.20.2** provides three saved Home Assistant views: **Main**, **Readings** and **Diagnostics**. It does not use a custom dashboard or view strategy. Native panels stack on phones.
+The AlphaESS dashboard provides three Home Assistant views: **Main**, **Readings** and **Diagnostics**. Native panels stack on phones.
 
 **Main** keeps the four-node flow and its battery charge, health, temperature and work-mode readings together. Force charging/discharging, export/import, Peak Shaving, operating settings, schedules and maintenance are on the same page. **Readings** contains daily energy, solar strings, battery details, filtered power and house-energy estimates. Diagnostics remains separate.
 
@@ -45,9 +45,7 @@ No cloud account required. All communication is direct to the inverter on your l
 
 Images use the production flow card and representative native panels with example readings; they are not screenshots of a connected inverter. Native card appearance follows your HA version and theme.
 
-Update to **v1.20.2** through HACS, restart HA and refresh the frontend. A fresh installation creates **AlphaESS**. An existing recognised **AlphaESS (Beta)** dashboard is updated in place, keeping its current name, permissions and URL. No duplicate is created. Customised, YAML and unrelated dashboards are preserved. [Setup, migration and rollback](docs/saved-dashboard.md).
-
-HACS displays the README from the installed version. An older installation can therefore show older previews until updated; refreshing HACS alone does not change the installed version.
+After integration setup, an **AlphaESS** dashboard is created automatically. Customised, YAML and unrelated dashboards are preserved. [Setup, migration and rollback](docs/saved-dashboard.md).
 
 ## About this project
 
@@ -55,7 +53,7 @@ Maintained by [PlainSeer](https://github.com/PlainSeer).
 
 **PlainSeer/ha-alphaess-modbus-tcp** is an independently maintained repository, continuing the previous [PlainSeer fork](https://github.com/PlainSeer/ha-alphaess-modbus). Its history derives from [Senalse's integration](https://github.com/senalse/ha-alphaess-modbus) at v1.14.0. The original Python integration is Senalse's work, based on [Axel Koegler's Hillview AlphaESS YAML package](https://projects.hillviewlodge.ie/alphaess/).
 
-This project maintains the integration and selectively adopts useful HA-side improvements while preserving existing entities, configuration compatibility and working inverter controls. Upstream appears inactive: as checked on **27 October 2026**, its latest default-branch commit was [the v1.14.0 release on 7 June 2026](https://github.com/senalse/ha-alphaess-modbus/commit/3b944d6bbba8cae6ccc6f58ca99f2ec8a6e46563). This is an observation about published commits, not a claim that the author has abandoned the project. The complete Git history, original attribution and MIT licence are retained.
+This project maintains the integration and selectively adopts useful HA-side improvements while preserving existing entities, configuration compatibility and working inverter controls. The complete Git history, original attribution and MIT licence are retained.
 
 ### Sensors and feature guides
 
@@ -70,13 +68,13 @@ The integration adds passive sensors using data already read by the integration.
 | House Energy Since Tracking | Accumulates from zero when first enabled using existing counter changes and observed AC-PV power. **Not lifetime house consumption.** |
 | House Load Energy Today (Accumulated) | Integrates existing raw house-load power into kWh. Only increases within a day, resets at HA-local midnight, and restores same-day totals after restart. |
 
-The displayed power filters use 80% previous value and 20% new value on source-value changes; unchanged values do not advance them. They initialise from current readings after restart and reset after unavailable input. The house-load calculation retains the existing behaviour rather than exactly copying Hillview.
+The displayed power filters use 80% previous value and 20% new value on source-value changes; unchanged values do not advance them. They initialise from current readings after restart and reset after unavailable input.
 
 Energy estimates can have gaps and do not automatically replace existing helpers or automations. The accumulated daily sensor starts when enabled; missing/stale samples and gaps over 60 seconds are omitted and flagged as `incomplete_day`. See the [energy calculations and limitations](docs/passive-house-energy.md) before using these sensors.
 
 [Optional Peak Shaving](docs/peak-shaving.md) uses existing dispatch controls when explicitly enabled. It is **off by default and after restart**, simulation-tested rather than hardware-tested, and cannot guarantee a hard import cap.
 
-This is not full Hillview parity. Hillview's Force Import pause/resume and Cutoff SoC Hold monitoring changes have not been adopted, and optional PV energy registers are not included. The [comparison report](docs/hillview-parity.md) includes the current Hillview v11.5 review; feature guides describe the implemented behaviour.
+Hillview's Force Import pause/resume, Cutoff SoC Hold monitoring and optional PV energy registers are not included. See the [feature comparison](docs/hillview-parity.md) for supported features and differences.
 
 ### Validation
 
@@ -596,7 +594,7 @@ Example Lovelace dashboard configurations are included in the [`examples/`](exam
 
 ## Release history
 
-The download badge counts release assets hosted in this repository, including updates and repeat downloads. It is not a count of unique installations. Download counts and stars from the previous repository do not transfer.
+The download badge counts release asset downloads, including updates and repeat downloads; it does not count unique installations.
 
 See the [GitHub release notes](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/releases) for changes, fixes, acknowledgements and upgrade instructions. The inherited [CHANGELOG.md](CHANGELOG.md) is retained as historical reference.
 

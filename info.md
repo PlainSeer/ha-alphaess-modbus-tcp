@@ -29,11 +29,11 @@ These passive sensors use data already read by the integration, without adding r
 
 **Off by default and after restart.** Uses existing dispatch controls to reduce grid import towards a target when explicitly enabled. Simulation-tested, not yet tested on physical inverter hardware; it cannot guarantee a hard import cap or prevent transient export. See the [feature guide and limitations](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/main/docs/peak-shaving.md).
 
-Hillview's Force Import pause/resume and Cutoff SoC Hold monitoring changes have not been adopted, and optional PV energy registers are not included.
+Hillview's Force Import pause/resume, Cutoff SoC Hold monitoring and optional PV energy registers are not included. See the [feature comparison](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/main/docs/hillview-parity.md) for supported features and differences.
 
 ## Default saved dashboard
 
-**v1.20.2** provides three saved Home Assistant views: **Main**, **Readings** and **Diagnostics**. It does not use a custom dashboard or view strategy. Native panels stack on phones.
+The AlphaESS dashboard provides three Home Assistant views: **Main**, **Readings** and **Diagnostics**. Native panels stack on phones.
 
 **Main** keeps the four-node flow and its battery charge, health, temperature and work-mode readings together. Force charging/discharging, export/import, Peak Shaving, operating settings, schedules and maintenance are on the same page. **Readings** contains daily energy, solar strings, battery details, filtered power and house-energy estimates. Diagnostics remains separate.
 
@@ -52,17 +52,13 @@ Hillview's Force Import pause/resume and Cutoff SoC Hold monitoring changes have
 
 Images use the production flow card and representative native panels with example readings; they are not screenshots of a connected inverter. Native card appearance follows your HA version and theme.
 
-Update to **v1.20.2** through HACS, restart HA and refresh the frontend. A fresh installation creates **AlphaESS**. An existing recognised **AlphaESS (Beta)** dashboard is updated in place, keeping its current name, permissions and URL. No duplicate is created. Customised, YAML and unrelated dashboards are preserved. [Setup, migration and rollback](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/v1.20.2/docs/saved-dashboard.md).
-
-HACS displays the README from the installed version. An older installation can therefore show older previews until updated; refreshing HACS alone does not change the installed version.
+After integration setup, an **AlphaESS** dashboard is created automatically. Customised, YAML and unrelated dashboards are preserved. [Setup, migration and rollback](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/v1.20.2/docs/saved-dashboard.md).
 
 ## Documentation and installation
 
 Moving from the previous PlainSeer repository? Read the [HACS migration guide](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/main/docs/hacs-migration.md) first.
 
 For requirements, setup, controls and limitations, see the [README](https://github.com/PlainSeer/ha-alphaess-modbus-tcp#readme), [energy calculation notes](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/main/docs/passive-house-energy.md) and [release history](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/releases).
-
-Version-specific changes, fixes and acknowledgements belong in the [GitHub release notes](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/releases).
 
 Existing installations should update through HACS and retain their configured integration and entities.
 
@@ -76,4 +72,4 @@ Original Python integration: [Senalse](https://github.com/senalse/ha-alphaess-mo
 
 [![Release downloads](https://img.shields.io/github/downloads/PlainSeer/ha-alphaess-modbus-tcp/total?label=release%20downloads)](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/releases)
 
-Counts release assets hosted in this repository, including updates and repeat downloads. These are not unique installations; counts and stars from the previous repository do not transfer.
+Counts release asset downloads, including updates and repeat downloads; it does not count unique installations.
