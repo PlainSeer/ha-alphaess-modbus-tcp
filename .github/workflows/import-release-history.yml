@@ -1,0 +1,68 @@
+name: Import published release history
+on:
+  push:
+    branches: [bootstrap-release-history]
+permissions:
+  contents: write
+jobs:
+  import:
+    if: github.repository == 'PlainSeer/ha-alphaess-modbus-tcp'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const crypto = require('crypto');
+            const expectedTags = {"v1.15.0":"3fa88c408622924cc1f0024665c1260687dbefa2","v1.16.0":"2c80a032f07980f208bc95ff2bc9b9fd3d1c9f4d","v1.16.1":"5c6c3f075e2b7b9334a9b519beb9e6f5d4a8dad8","v1.17.0":"d217f15bef8aceed82ffe845e30bfb971cabd432","v1.17.1":"7e575bc74c6f5549ed8fb69e818e6a44414ed9c7","v1.18.0":"60fc7254b2c505bfd67975d2c1519917dbda4497","v1.19.0":"b15ff100a2c5b020f6aef1e7e79894daa1332227","v1.19.1":"631915678285e94dfd09c960cf923fa10d545cc2","v1.19.2":"58e9450d523f13607b2042022b699144550f76aa","v1.19.3b1":"82ea0f7350ebce65940c6e510c2fc3a2ca55f797","v1.19.3b2":"ab628fbfe857085f97c58d0c5f206e9a46a3e824","v1.19.3b3":"da8924720f01148558dbbfc9e4218e5b616aa0ea","v1.19.3b4":"61508c4831ab0c719257f65d402605a948fa7fcf","v1.19.3b5":"70cc220e4243e1be6cc4cce4c69e24623e1ec171","v1.19.3b6":"28e3626f1f3eda9425cecdfc18bac66fc0e8f155","v1.20.0":"248648134625cf809c7ffb582fa2246ddb3e62d9","v1.20.0b1":"d60f174ac61c223c8e3406b492f4e60d8d88f211","v1.20.1":"f4068ddea53a906edaf748b9a459c3b63e297ae4"};
+            const response = await fetch('https://api.github.com/repos/PlainSeer/ha-alphaess-modbus/releases?per_page=100');
+            if (!response.ok) throw new Error('Cannot read published source releases: ' + response.status);
+            const source = (await response.json()).filter(release => !release.draft);
+            if (source.length !== Object.keys(expectedTags).length) throw new Error('Source release inventory changed');
+            const destination = await github.paginate(github.rest.repos.listReleases, {...context.repo, per_page: 100});
+            for (const original of source.sort((a,b) => Date.parse(a.published_at) - Date.parse(b.published_at))) {
+              const sha = expectedTags[original.tag_name];
+              if (!sha) throw new Error('Unexpected source release ' + original.tag_name);
+              const {data: ref} = await github.rest.git.getRef({...context.repo, ref: 'tags/' + original.tag_name});
+              if (ref.object.sha !== sha) throw new Error('Imported tag differs: ' + original.tag_name);
+              const body = (original.body || '') + '\n\n---\nHistorical release copied from ' + original.html_url + ' (originally published ' + original.published_at + ').';
+              const matching = destination.filter(release => release.tag_name === original.tag_name);
+              let release = matching.find(release => !release.draft) || matching.sort((a,b)=>a.id-b.id)[0];
+              if (!release) {
+                ({data: release} = await github.rest.repos.createRelease({
+                  ...context.repo, tag_name: original.tag_name, target_commitish: sha,
+                  name: original.name || original.tag_name, body, draft: true,
+                  prerelease: original.prerelease, make_latest: 'false'
+                }));
+              } else if (release.draft) {
+                ({data: release} = await github.rest.repos.updateRelease({
+                  ...context.repo, release_id: release.id, target_commitish: sha,
+                  name: original.name || original.tag_name, body, prerelease: original.prerelease
+                }));
+              }
+              for (const asset of original.assets) {
+                const oldAsset = release.assets.find(item => item.name === asset.name);
+                if (oldAsset && oldAsset.size === asset.size && oldAsset.digest === asset.digest) continue;
+                if (!release.draft) throw new Error('Published destination asset mismatch: ' + original.tag_name);
+                if (oldAsset) await github.rest.repos.deleteReleaseAsset({...context.repo, asset_id: oldAsset.id});
+                const download = await fetch(asset.browser_download_url);
+                if (!download.ok) throw new Error('Cannot download source asset: ' + asset.name);
+                const bytes = Buffer.from(await download.arrayBuffer());
+                const digest = 'sha256:' + crypto.createHash('sha256').update(bytes).digest('hex');
+                if (bytes.length !== asset.size || (asset.digest && digest !== asset.digest)) throw new Error('Source asset checksum mismatch');
+                const {data: uploaded} = await github.rest.repos.uploadReleaseAsset({
+                  ...context.repo, release_id: release.id, name: asset.name, data: bytes,
+                  headers: {'content-type': asset.content_type || 'application/octet-stream', 'content-length': bytes.length}
+                });
+                if (uploaded.size !== asset.size || (uploaded.digest && uploaded.digest !== digest)) throw new Error('Uploaded asset checksum mismatch');
+              }
+              const {data: verified} = await github.rest.repos.getRelease({...context.repo, release_id: release.id});
+              if (verified.prerelease !== original.prerelease) throw new Error('Prerelease flag mismatch');
+              if (verified.assets.length !== original.assets.length) throw new Error('Asset inventory mismatch');
+              if (verified.assets.some(asset => asset.state !== 'uploaded' || !original.assets.some(sourceAsset => sourceAsset.name === asset.name && sourceAsset.size === asset.size && (!sourceAsset.digest || sourceAsset.digest === asset.digest)))) throw new Error('Uploaded asset verification failed');
+              if (release.draft) await github.rest.repos.updateRelease({
+                ...context.repo, release_id: release.id, draft: false,
+                make_latest: original.tag_name === 'v1.20.1' ? 'true' : 'false'
+              });
+              core.info('Verified published release ' + original.tag_name);
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            }
