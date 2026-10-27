@@ -10,12 +10,12 @@
     "@PlainSeer"
   ],
   "config_flow": true,
-  "documentation": "https://github.com/PlainSeer/ha-alphaess-modbus",
+  "documentation": "https://github.com/PlainSeer/ha-alphaess-modbus-tcp",
   "integration_type": "device",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/PlainSeer/ha-alphaess-modbus/issues",
+  "issue_tracker": "https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues",
   "requirements": [
     "pymodbus>=3.7.4"
   ],
-  "version": "1.20.1"
+  "version": "1.20.2"
 }

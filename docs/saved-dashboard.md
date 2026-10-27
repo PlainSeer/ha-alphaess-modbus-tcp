@@ -23,7 +23,7 @@ active Home Assistant theme.
 
 ## Install and migration
 
-Update to v1.20.1 through HACS, restart Home Assistant, then refresh its frontend.
+Update to v1.20.2 through HACS, restart Home Assistant, then refresh its frontend.
 Beta releases do not need to be enabled. HACS displays the README for the installed
 version, so an older installation may still show older previews until updated. During
 integration setup, entity registry entries are matched by platform, config-entry

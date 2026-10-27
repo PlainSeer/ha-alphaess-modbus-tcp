@@ -91,5 +91,5 @@ window.customStrategies = window.customStrategies || [];
 if (!window.customStrategies.some(s => s.type === TYPE && s.strategyType === "dashboard")) {
   window.customStrategies.push({type:TYPE, strategyType:"dashboard", name:"AlphaESS",
     description:"Battery, solar and inverter controls. Diagnostic beta loader.",
-    documentationURL:"https://github.com/PlainSeer/ha-alphaess-modbus/blob/main/docs/managed-dashboard.md"});
+    documentationURL:"https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/main/docs/managed-dashboard.md"});
 }

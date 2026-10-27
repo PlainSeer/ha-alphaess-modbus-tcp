@@ -6,7 +6,7 @@ window.dispatchEvent(new CustomEvent("alphaess-dashboard-load", {detail:"module-
 const DOMAIN = "alphaess_modbus";
 const TYPE = "alphaess-modbus";
 const CARD = "alphaess-summary";
-const DOCS = "https://github.com/PlainSeer/ha-alphaess-modbus/blob/main/docs/managed-dashboard.md";
+const DOCS = "https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/main/docs/managed-dashboard.md";
 const spec = (key, label, icon, color = "blue", domain = "sensor") =>
   ({ key, label, icon, color, domain });
 

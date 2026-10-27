@@ -1,11 +1,13 @@
 # AlphaESS Modbus TCP - Home Assistant Integration
 
-<img src="https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus/main/custom_components/alphaess_modbus/brand/icon.png" alt="AlphaESS icon" width="96" height="96">
+<img src="https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/main/custom_components/alphaess_modbus/brand/icon.png" alt="AlphaESS icon" width="96" height="96">
 
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-[![GitHub Release](https://img.shields.io/github/release/PlainSeer/ha-alphaess-modbus.svg)](https://github.com/PlainSeer/ha-alphaess-modbus/releases)
-[![Release downloads](https://img.shields.io/github/downloads/PlainSeer/ha-alphaess-modbus/total?label=release%20downloads)](https://github.com/PlainSeer/ha-alphaess-modbus/releases)
+[![GitHub Release](https://img.shields.io/github/release/PlainSeer/ha-alphaess-modbus-tcp.svg)](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/releases)
+[![Release downloads](https://img.shields.io/github/downloads/PlainSeer/ha-alphaess-modbus-tcp/total?label=release%20downloads)](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/releases)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+[Repository](https://github.com/PlainSeer/ha-alphaess-modbus-tcp) · [Issues](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues) · [Moving from the previous repository](docs/hacs-migration.md)
 
 Local Home Assistant integration for **AlphaESS solar inverters** (SMILE-M5, SMILE5, SMILE-G3, SMILE-Hi, SMILE-B3 series) via **Modbus TCP**.
 
@@ -13,7 +15,7 @@ No cloud account required. All communication is direct to the inverter on your l
 
 > [!WARNING]
 > ## USE AT YOUR OWN RISK
-> **This is an unofficial community-maintained fork, not an AlphaESS product or a supported service. There is no guarantee of fitness, reliability or compatibility with your installation.**
+> **This is an unofficial community-maintained integration, not an AlphaESS product or a supported service. There is no guarantee of fitness, reliability or compatibility with your installation.**
 >
 > **The integration includes controls that write to your inverter's Modbus registers.** Its derived sensors are passive, but the integration as a whole is not read-only. Incorrect settings, incompatible firmware or conflicting control automations can cause unexpected charging, discharging or export, financial loss, or damage to equipment.
 >
@@ -24,40 +26,40 @@ No cloud account required. All communication is direct to the inverter on your l
 
 ## Dashboard preview
 
-**v1.20.1** provides three saved Home Assistant views: **Main**, **Readings** and **Diagnostics**. It does not use a custom dashboard or view strategy. Native panels stack on phones.
+**v1.20.2** provides three saved Home Assistant views: **Main**, **Readings** and **Diagnostics**. It does not use a custom dashboard or view strategy. Native panels stack on phones.
 
 **Main** keeps the four-node flow and its battery charge, health, temperature and work-mode readings together. Force charging/discharging, export/import, Peak Shaving, operating settings, schedules and maintenance are on the same page. **Readings** contains daily energy, solar strings, battery details, filtered power and house-energy estimates. Diagnostics remains separate.
 
-![AlphaESS Main — local preview with example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-main.png)
+![AlphaESS Main — local preview with example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-main.png)
 
 <details>
 <summary>Readings, Diagnostics and phone previews</summary>
 
-![AlphaESS Readings — local preview with example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-readings.png)
+![AlphaESS Readings — local preview with example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-readings.png)
 
-![AlphaESS Diagnostics — local preview with example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-diagnostics.png)
+![AlphaESS Diagnostics — local preview with example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-diagnostics.png)
 
-<img src="https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-mobile.png" alt="AlphaESS Main on a 390-pixel phone viewport — local preview with example data" width="390">
+<img src="https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-mobile.png" alt="AlphaESS Main on a 390-pixel phone viewport — local preview with example data" width="390">
 
 </details>
 
 Images use the production flow card and representative native panels with example readings; they are not screenshots of a connected inverter. Native card appearance follows your HA version and theme.
 
-Update to **v1.20.1** through HACS, restart HA and refresh the frontend. A fresh installation creates **AlphaESS**. An existing recognised **AlphaESS (Beta)** dashboard is updated in place, keeping its current name, permissions and URL. No duplicate is created. Customised, YAML and unrelated dashboards are preserved. [Setup, migration and rollback](docs/saved-dashboard.md).
+Update to **v1.20.2** through HACS, restart HA and refresh the frontend. A fresh installation creates **AlphaESS**. An existing recognised **AlphaESS (Beta)** dashboard is updated in place, keeping its current name, permissions and URL. No duplicate is created. Customised, YAML and unrelated dashboards are preserved. [Setup, migration and rollback](docs/saved-dashboard.md).
 
 HACS displays the README from the installed version. An older installation can therefore show older previews until updated; refreshing HACS alone does not change the installed version.
 
-## About this fork
+## About this project
 
 Maintained by [PlainSeer](https://github.com/PlainSeer).
 
-**PlainSeer/ha-alphaess-modbus** continues from [Senalse's integration](https://github.com/senalse/ha-alphaess-modbus) at v1.14.0. The original Python integration is Senalse's work, based on [Axel Koegler's Hillview AlphaESS YAML package](https://projects.hillviewlodge.ie/alphaess/).
+**PlainSeer/ha-alphaess-modbus-tcp** is an independently maintained repository, continuing the previous [PlainSeer fork](https://github.com/PlainSeer/ha-alphaess-modbus). Its history derives from [Senalse's integration](https://github.com/senalse/ha-alphaess-modbus) at v1.14.0. The original Python integration is Senalse's work, based on [Axel Koegler's Hillview AlphaESS YAML package](https://projects.hillviewlodge.ie/alphaess/).
 
-This fork maintains the integration and selectively adopts useful HA-side improvements while preserving existing entities, configuration compatibility and working inverter controls. Upstream appears inactive: as checked on **27 October 2026**, its latest default-branch commit was [the v1.14.0 release on 7 June 2026](https://github.com/senalse/ha-alphaess-modbus/commit/3b944d6bbba8cae6ccc6f58ca99f2ec8a6e46563). This is an observation about published commits, not a claim that the author has abandoned the project. We retain the fork relationship and upstream attribution.
+This project maintains the integration and selectively adopts useful HA-side improvements while preserving existing entities, configuration compatibility and working inverter controls. Upstream appears inactive: as checked on **27 October 2026**, its latest default-branch commit was [the v1.14.0 release on 7 June 2026](https://github.com/senalse/ha-alphaess-modbus/commit/3b944d6bbba8cae6ccc6f58ca99f2ec8a6e46563). This is an observation about published commits, not a claim that the author has abandoned the project. The complete Git history, original attribution and MIT licence are retained.
 
 ### Sensors and feature guides
 
-The fork adds passive sensors using data already read by the integration. They do not add register reads or writes, change polling, or replace existing entities and controls.
+The integration adds passive sensors using data already read by the integration. They do not add register reads or writes, change polling, or replace existing entities and controls.
 
 | Sensor | Purpose and limitations |
 | --- | --- |
@@ -68,7 +70,7 @@ The fork adds passive sensors using data already read by the integration. They d
 | House Energy Since Tracking | Accumulates from zero when first enabled using existing counter changes and observed AC-PV power. **Not lifetime house consumption.** |
 | House Load Energy Today (Accumulated) | Integrates existing raw house-load power into kWh. Only increases within a day, resets at HA-local midnight, and restores same-day totals after restart. |
 
-The displayed power filters use 80% previous value and 20% new value on source-value changes; unchanged values do not advance them. They initialise from current readings after restart and reset after unavailable input. The house-load calculation retains this fork's existing behaviour rather than exactly copying Hillview.
+The displayed power filters use 80% previous value and 20% new value on source-value changes; unchanged values do not advance them. They initialise from current readings after restart and reset after unavailable input. The house-load calculation retains the existing behaviour rather than exactly copying Hillview.
 
 Energy estimates can have gaps and do not automatically replace existing helpers or automations. The accumulated daily sensor starts when enabled; missing/stale samples and gaps over 60 seconds are omitted and flagged as `incomplete_day`. See the [energy calculations and limitations](docs/passive-house-energy.md) before using these sensors.
 
@@ -84,7 +86,7 @@ The test workflow covers HA 2026.10.4 / Python 3.14 and HA 2024.12.5 / Python 3.
 
 ## Features
 
-Version-specific changes and acknowledgements are recorded in the [release notes](https://github.com/PlainSeer/ha-alphaess-modbus/releases).
+Version-specific changes and acknowledgements are recorded in the [release notes](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/releases).
 
 - **Power, energy and diagnostic sensors** - real-time power flows, battery SoC/SoH, cell voltages, temperatures, voltages, energy totals, daily energy summaries, dispatch diagnostics, grid safety parameters, faults & warnings
 - **Force Charging** - charge battery from grid at configurable power (kW), duration, and cutoff SoC
@@ -119,17 +121,19 @@ Version-specific changes and acknowledgements are recorded in the [release notes
 
 ## Installation
 
+Moving from the previous PlainSeer repository? Read the [HACS migration guide](docs/hacs-migration.md) first.
+
 ### Via HACS (recommended)
 
 1. Open HACS in Home Assistant
 2. Go to **Integrations** → click the three-dot menu → **Custom Repositories**
-3. Add `https://github.com/PlainSeer/ha-alphaess-modbus` - category: **Integration**
+3. Add `https://github.com/PlainSeer/ha-alphaess-modbus-tcp` - category: **Integration**
 4. Click **Download** on the AlphaESS Modbus TCP card
 5. Restart Home Assistant
 
 ### Manual
 
-1. Download the latest release from the [Releases page](https://github.com/PlainSeer/ha-alphaess-modbus/releases)
+1. Download the latest release from the [Releases page](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/releases)
 2. Copy the `custom_components/alphaess_modbus` folder into your HA config directory under `custom_components/`
 3. Restart Home Assistant
 
@@ -592,9 +596,9 @@ Example Lovelace dashboard configurations are included in the [`examples/`](exam
 
 ## Release history
 
-The download badge counts packaged release downloads from v1.20.1 onward, including updates and repeat downloads. It is not a count of unique installations, and earlier source-archive downloads are not included.
+The download badge counts release assets hosted in this repository, including updates and repeat downloads. It is not a count of unique installations. Download counts and stars from the previous repository do not transfer.
 
-See the [GitHub release notes](https://github.com/PlainSeer/ha-alphaess-modbus/releases) for changes, fixes, acknowledgements and upgrade instructions. The inherited [CHANGELOG.md](CHANGELOG.md) is retained as historical reference.
+See the [GitHub release notes](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/releases) for changes, fixes, acknowledgements and upgrade instructions. The inherited [CHANGELOG.md](CHANGELOG.md) is retained as historical reference.
 
 ---
 
