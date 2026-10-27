@@ -29,13 +29,13 @@ jobs:
               let release = matching.find(release => !release.draft) || matching.sort((a,b)=>a.id-b.id)[0];
               if (!release) {
                 ({data: release} = await github.rest.repos.createRelease({
-                  ...context.repo, tag_name: original.tag_name, target_commitish: sha,
+                  ...context.repo, tag_name: original.tag_name,
                   name: original.name || original.tag_name, body, draft: true,
                   prerelease: original.prerelease, make_latest: 'false'
                 }));
               } else if (release.draft) {
                 ({data: release} = await github.rest.repos.updateRelease({
-                  ...context.repo, release_id: release.id, target_commitish: sha,
+                  ...context.repo, release_id: release.id,
                   name: original.name || original.tag_name, body, prerelease: original.prerelease
                 }));
               }
