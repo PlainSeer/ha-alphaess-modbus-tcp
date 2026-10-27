@@ -21,6 +21,18 @@ open more-info rather than running a button immediately. Diagnostics shows each
 enabled sensor and binary sensor once. Panels stack on phones and follow the
 active Home Assistant theme.
 
+The first control groups use this two-column order on wider screens:
+
+| Left | Right |
+| --- | --- |
+| Battery & Grid | Force charging |
+| Force discharging | Dispatch |
+| Force import | Force export |
+| Excess export | Peak shaving |
+
+Operating settings, operating modes, scheduling and maintenance continue below.
+On phones, the left section stacks before the right section.
+
 ## Install and migration
 
 Update to v1.20.2 through HACS, restart Home Assistant, then refresh its frontend.

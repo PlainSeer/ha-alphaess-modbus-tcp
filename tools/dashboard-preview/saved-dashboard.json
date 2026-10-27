@@ -233,6 +233,41 @@
             },
             {
               "type": "entities",
+              "title": "Dispatch",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "number.alphaess_inverter_dispatch_duration",
+                  "name": "Dispatch Duration"
+                },
+                {
+                  "entity": "number.alphaess_inverter_dispatch_power",
+                  "name": "Dispatch Power"
+                },
+                {
+                  "entity": "number.alphaess_inverter_dispatch_stop_at_soc",
+                  "name": "Dispatch Stop at SoC"
+                },
+                {
+                  "entity": "select.alphaess_inverter_dispatch_mode",
+                  "name": "Dispatch Mode"
+                },
+                {
+                  "entity": "sensor.alphaess_inverter_dispatch_time_remaining",
+                  "name": "Dispatch Time Remaining"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_dispatch",
+                  "name": "Dispatch"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_dispatch_pv_enabled",
+                  "name": "Dispatch PV Enabled"
+                }
+              ]
+            },
+            {
+              "type": "entities",
               "title": "Force export",
               "show_header_toggle": false,
               "entities": [
@@ -282,41 +317,6 @@
                 {
                   "entity": "switch.alphaess_inverter_peak_shaving",
                   "name": "Peak Shaving"
-                }
-              ]
-            },
-            {
-              "type": "entities",
-              "title": "Dispatch",
-              "show_header_toggle": false,
-              "entities": [
-                {
-                  "entity": "number.alphaess_inverter_dispatch_duration",
-                  "name": "Dispatch Duration"
-                },
-                {
-                  "entity": "number.alphaess_inverter_dispatch_power",
-                  "name": "Dispatch Power"
-                },
-                {
-                  "entity": "number.alphaess_inverter_dispatch_stop_at_soc",
-                  "name": "Dispatch Stop at SoC"
-                },
-                {
-                  "entity": "select.alphaess_inverter_dispatch_mode",
-                  "name": "Dispatch Mode"
-                },
-                {
-                  "entity": "sensor.alphaess_inverter_dispatch_time_remaining",
-                  "name": "Dispatch Time Remaining"
-                },
-                {
-                  "entity": "switch.alphaess_inverter_dispatch",
-                  "name": "Dispatch"
-                },
-                {
-                  "entity": "switch.alphaess_inverter_dispatch_pv_enabled",
-                  "name": "Dispatch PV Enabled"
                 }
               ]
             },
