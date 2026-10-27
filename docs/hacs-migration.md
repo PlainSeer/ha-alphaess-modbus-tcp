@@ -4,7 +4,9 @@ The maintained repository is now
 [`PlainSeer/ha-alphaess-modbus-tcp`](https://github.com/PlainSeer/ha-alphaess-modbus-tcp).
 It is independent of GitHub's fork network. The previous
 [`PlainSeer/ha-alphaess-modbus`](https://github.com/PlainSeer/ha-alphaess-modbus)
-repository remains available for existing installations and rollback.
+repository is retired as a historical signpost. Use the standalone repository
+for installations, updates and support. Earlier published versions are also
+available from the standalone repository for rollback.
 
 The integration is still called **AlphaESS Modbus TCP**. Its domain and install
 directory remain `alphaess_modbus`, and its configuration, device/entity unique
@@ -20,6 +22,8 @@ would also remove the newly installed files.
 1. Make a Home Assistant backup and record the currently installed version.
 2. In **HACS**, remove the download for `PlainSeer/ha-alphaess-modbus`.
    Keep the configured AlphaESS integration in **Settings → Devices & services**.
+   If HACS warns that the integration is configured, choose **Ignore** for this
+   download-source change; retain the configured HA integration.
    Do not restart Home Assistant yet.
 3. In **HACS → Custom repositories**, add
    `https://github.com/PlainSeer/ha-alphaess-modbus-tcp`, category **Integration**.
@@ -35,11 +39,19 @@ HACS uses a different repository ID for the new source. Check any update
 notifications or automations that refer to its HACS update entity after moving.
 The inverter's integration entities continue using their existing identifiers.
 
-If the new download fails, restore the previous repository's download before
-restarting. To roll back later, remove the new HACS download, add/download the
-previous repository at the recorded version, then restart. Retain the configured
-AlphaESS integration throughout. Restoring the HA backup is the fallback if
-configuration or registry entries were removed separately.
+If the new download fails, do not restart with the integration files missing.
+Restore the known-good integration folder from backup, or download the previously
+installed version from the new repository, before restarting.
+
+To roll back after migrating, use HACS's **Redownload** version selector on the
+standalone repository and choose the recorded previous version (including
+v1.20.1). Its historical releases and the v1.20.1 ZIP were copied here, so rollback
+does not require the retired fork. Restart after the download completes and keep
+the configured AlphaESS integration throughout.
+
+HACS blocks downloads from archived repositories. The retired fork's public code
+and release assets remain readable on GitHub for historical/manual recovery.
+Restore the HA backup if configuration or registry entries were removed separately.
 
 ## New installations
 
