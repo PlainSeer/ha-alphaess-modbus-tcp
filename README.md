@@ -236,6 +236,9 @@ These sensors have a 1 s `scan_interval` but the master loop runs at 2 s in Norm
 | Grid Voltage Phase A | V | 5 s | |
 | Grid Voltage Phase B | V | 5 s | |
 | Grid Voltage Phase C | V | 5 s | |
+| Grid Current Phase A | A | 5 s | Current magnitude, without import/export direction |
+| Grid Current Phase B | A | 5 s | Current magnitude, without import/export direction |
+| Grid Current Phase C | A | 5 s | Current magnitude, without import/export direction |
 | Max Feed to Grid | % | 5 s | Grid export limit as % of installed PV capacity |
 
 #### Inverter
