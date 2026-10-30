@@ -1,6 +1,7 @@
 """Saved views, guarded migrations and entity coverage."""
 import asyncio
 import json
+import re
 import tempfile
 from types import SimpleNamespace as NS
 from unittest.mock import AsyncMock, Mock, patch
@@ -16,6 +17,21 @@ def entity(key, domain="sensor", entry="entry", **kwargs):
               unique_id=f"{entry}_{key}", config_entry_id=entry, device_id=entry,
               platform="alphaess_modbus", disabled_by=kwargs.get("disabled_by"),
               hidden_by=kwargs.get("hidden_by"), name=None, original_name=key)
+
+
+def visible_cards(view, width):
+    cards = []
+    for section in view["sections"]:
+        visible = True
+        for condition in section.get("visibility", []):
+            assert condition["condition"] == "screen"
+            match = re.fullmatch(r"\((min|max)-width: (\d+)px\)", condition["media_query"])
+            assert match
+            boundary = int(match[2])
+            visible &= width >= boundary if match[1] == "min" else width <= boundary
+        if visible:
+            cards.extend(section["cards"])
+    return cards
 
 
 def generated():
@@ -72,14 +88,42 @@ def test_main_keeps_flow_summary_and_all_controls_readings_move_to_second_view()
     flow = main["sections"][0]["cards"][0]
     assert flow["type"] == "custom:alphaess-power-flow"
     assert set(flow["entities"]) >= {"soc", "health", "temperature", "mode", "grid"}
-    main_text, reading_text = json.dumps(main), json.dumps(readings)
-    for e in entities:
-        if e.domain in ("switch", "number", "button"):
-            assert main_text.count(e.entity_id) == 1
-            assert e.entity_id not in reading_text
-    assert "today_pv_generation" not in main_text
+    reading_text = json.dumps(readings)
+    for width in (320, 390, 767, 768, 1024):
+        main_text = json.dumps(visible_cards(main, width))
+        for e in entities:
+            if e.domain in ("switch", "number", "button"):
+                assert main_text.count(e.entity_id) == 1
+                assert e.entity_id not in reading_text
+        assert "today_pv_generation" not in main_text
     assert "today_pv_generation" in reading_text
     assert json.dumps(diagnostics).count('"entity": "sensor.renamed_entry_battery_fault"') == 1
+
+
+def test_main_mobile_order_preserves_each_card_and_the_desktop_columns():
+    from collections import Counter
+
+    entities = [entity("power_grid"), entity("today_pv_generation"), entity("battery_fault")]
+    entities += [entity(key, "switch") for key in ("force_charging", "force_discharging",
+                 "force_import", "force_export", "dispatch", "excess_export", "peak_shaving")]
+    entities += [entity("max_feed_to_grid", "number"), entity("restart_ems", "button")]
+    for entries in (entities, [e for e in entities if "force_charging" not in e.entity_id]):
+        main, readings, diagnostics = build_dashboard(entries, {})["views"]
+        desktop = visible_cards(main, 1024)
+        labels = lambda cards: [c.get("title", c["type"]) for c in cards]
+        expected = ["custom:alphaess-power-flow", "Force charging", "Force discharging", "Dispatch"]
+        expected = [name for name in expected if name in labels(desktop)]
+        remaining = [c for c in desktop if c.get("title", c["type"]) not in expected]
+        for width in (320, 390, 767):
+            mobile = visible_cards(main, width)
+            assert labels(mobile)[:len(expected)] == expected
+            assert mobile[len(expected):] == remaining
+            assert Counter(json.dumps(c, sort_keys=True) for c in mobile) == Counter(
+                json.dumps(c, sort_keys=True) for c in desktop)
+        assert visible_cards(main, 768) == desktop
+        assert len(main["sections"]) == 3
+        assert all("visibility" not in section for v in (readings, diagnostics) for section in v["sections"])
+        assert json.dumps(main).count('"strategy"') == 0
 
 
 def test_recognition_rejects_modified_beta():
