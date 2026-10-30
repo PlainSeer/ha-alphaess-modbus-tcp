@@ -69,9 +69,9 @@ Sensors are polled at the interval shown. Entries marked **off** in the Default 
 | 0x0014 | `voltage_phase_a_grid` | Grid Voltage Phase A | Phase A grid voltage | V | int16 | - | 5 s | on |
 | 0x0015 | `voltage_phase_b_grid` | Grid Voltage Phase B | Phase B grid voltage | V | int16 | - | 5 s | on |
 | 0x0016 | `voltage_phase_c_grid` | Grid Voltage Phase C | Phase C grid voltage | V | int16 | - | 5 s | on |
-| 0x0017 | `current_phase_a_grid` | Grid Current Phase A | Phase A grid current (magnitude, no direction) | A | int16 | x0.1 | 5 s | on |
-| 0x0018 | `current_phase_b_grid` | Grid Current Phase B | Phase B grid current (magnitude, no direction) | A | int16 | x0.1 | 5 s | on |
-| 0x0019 | `current_phase_c_grid` | Grid Current Phase C | Phase C grid current (magnitude, no direction) | A | int16 | x0.1 | 5 s | on |
+| 0x0017 | `current_phase_a_grid` | Grid Current Phase A | Phase A grid current; sign convention depends on inverter/meter | A | int16 | x0.1 | 5 s | on |
+| 0x0018 | `current_phase_b_grid` | Grid Current Phase B | Phase B grid current; sign convention depends on inverter/meter | A | int16 | x0.1 | 5 s | on |
+| 0x0019 | `current_phase_c_grid` | Grid Current Phase C | Phase C grid current; sign convention depends on inverter/meter | A | int16 | x0.1 | 5 s | on |
 
 ### Battery Power
 

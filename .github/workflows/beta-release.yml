@@ -1,0 +1,115 @@
+name: Development beta release
+
+on:
+  push:
+    branches: [development]
+    paths:
+      - custom_components/alphaess_modbus/manifest.json
+      - .github/release-notes/v*.md
+
+permissions:
+  contents: read
+
+jobs:
+  python-tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - python: "3.12"
+            ha: "2024.12.5"
+          - python: "3.14"
+            ha: "2026.10.4"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m pip install homeassistant==${{ matrix.ha }} pymodbus==3.7.4 pytest==9.1.1
+      - run: python -m pytest tests/ -q
+  frontend-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm test
+  hassfest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: home-assistant/actions/hassfest@master
+  hacs:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: hacs/action@main
+        with:
+          category: integration
+  release:
+    needs: [python-tests, frontend-tests, hassfest, hacs]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+      - name: Check beta version and existing release
+        id: version
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const version = JSON.parse(fs.readFileSync('custom_components/alphaess_modbus/manifest.json')).version;
+            if (!/^\d+\.\d+\.\d+b\d+$/.test(version)) {
+              core.setOutput('publish', 'false');
+              return;
+            }
+            const tag = `v${version}`;
+            if (!fs.existsSync(`.github/release-notes/${tag}.md`)) throw new Error('Missing release notes');
+            const releases = await github.paginate(github.rest.repos.listReleases, {...context.repo, per_page: 100});
+            const matching = releases.filter(release => release.tag_name === tag);
+            if (matching.some(release => !release.draft)) {
+              core.setOutput('publish', 'false');
+              return;
+            }
+            const draft = matching.sort((a, b) => a.id - b.id)[0];
+            if (draft) {
+              await github.rest.repos.updateRelease({
+                ...context.repo, release_id: draft.id, target_commitish: context.sha
+              });
+            }
+            core.setOutput('publish', 'true');
+            core.setOutput('tag', tag);
+      - name: Build HACS package
+        if: steps.version.outputs.publish == 'true'
+        run: python3 tools/build_release.py dist/alphaess_modbus.zip
+      - uses: softprops/action-gh-release@v2
+        id: upload
+        if: steps.version.outputs.publish == 'true'
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: ${{ steps.version.outputs.tag }} — AlphaESS Modbus TCP
+          draft: true
+          prerelease: true
+          make_latest: false
+          body_path: .github/release-notes/${{ steps.version.outputs.tag }}.md
+          files: dist/alphaess_modbus.zip
+          fail_on_unmatched_files: true
+      - name: Publish after package upload
+        if: steps.version.outputs.publish == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const {data: release} = await github.rest.repos.getRelease({
+              ...context.repo, release_id: Number('${{ steps.upload.outputs.id }}')
+            });
+            if (!release.draft || release.target_commitish !== context.sha) throw new Error('Unexpected release state');
+            const asset = release.assets.find(asset => asset.name === 'alphaess_modbus.zip');
+            if (!asset || asset.state !== 'uploaded' || asset.size === 0) throw new Error('HACS package not uploaded');
+            await github.rest.repos.updateRelease({
+              ...context.repo, release_id: release.id, draft: false, prerelease: true, make_latest: 'false'
+            });
