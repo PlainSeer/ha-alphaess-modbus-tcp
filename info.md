@@ -16,6 +16,7 @@ Standalone successor to [PlainSeer's previous repository](https://github.com/Pla
 
 ## Sensor overview
 
+- **Grid Current Phase A / B / C:** per-phase current magnitudes in amps, with 0.1 A resolution. They do not indicate import/export direction and use the existing grid register reads.
 - **Current House Load Filtered / Current PV Production Filtered:** smooth the existing power calculations. These displayed values do not drive inverter controls.
 - **Excess Power:** filtered PV minus filtered house load, clamped at zero; an estimate, not an export command.
 - **Battery Full:** on when existing raw battery status is `1` (charging not permitted, discharging permitted), matching Hillview. Invalid, missing or unrecognised status makes it unavailable.
@@ -33,26 +34,26 @@ See the [feature comparison](https://github.com/PlainSeer/ha-alphaess-modbus-tcp
 
 ## Default saved dashboard
 
-The AlphaESS dashboard provides three Home Assistant views: **Main**, **Readings** and **Diagnostics**. Native panels stack on phones.
+The AlphaESS dashboard provides three Home Assistant views: **Main**, **Readings** and **Diagnostics**. On phones, Main starts with the flow and four summary readings, Force charging, Force discharging and Dispatch.
 
 **Main** keeps the four-node flow and its battery charge, health, temperature and work-mode readings together. Force charging/discharging, export/import, Peak Shaving, operating settings, schedules and maintenance are on the same page. **Readings** contains daily energy, solar strings, battery details, filtered power and house-energy estimates. Diagnostics remains separate.
 
-![AlphaESS Main — local preview with example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-main.png)
+![AlphaESS Main — light theme with daytime example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/8dc2acd8e9efa9e95f43aafbd9c827b1f4f6826b/docs/images/dashboard-main.png)
 
 <details>
 <summary>Readings, Diagnostics and phone previews</summary>
 
-![AlphaESS Readings — local preview with example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-readings.png)
+![AlphaESS Readings — light theme with daytime example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/8dc2acd8e9efa9e95f43aafbd9c827b1f4f6826b/docs/images/dashboard-readings.png)
 
-![AlphaESS Diagnostics — local preview with example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-diagnostics.png)
+![AlphaESS Diagnostics — light theme with daytime example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/8dc2acd8e9efa9e95f43aafbd9c827b1f4f6826b/docs/images/dashboard-diagnostics.png)
 
-<img src="https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-mobile.png" alt="AlphaESS Main on a 390-pixel phone viewport — local preview with example data" width="390">
+<img src="https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/8dc2acd8e9efa9e95f43aafbd9c827b1f4f6826b/docs/images/dashboard-mobile.png" alt="AlphaESS Main on a 390-pixel phone viewport — light theme with daytime example data" width="390">
 
 </details>
 
 Images use the production flow card and representative native panels with example readings; they are not screenshots of a connected inverter. Native card appearance follows your HA version and theme.
 
-After integration setup, an **AlphaESS** dashboard is created automatically. Customised, YAML and unrelated dashboards are preserved. [Setup, migration and rollback](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/v1.20.2/docs/saved-dashboard.md).
+After integration setup, an **AlphaESS** dashboard is created automatically. Customised, YAML and unrelated dashboards are preserved. [Setup, migration and rollback](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/v1.21.0/docs/saved-dashboard.md).
 
 ## Documentation and installation
 

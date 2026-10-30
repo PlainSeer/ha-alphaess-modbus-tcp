@@ -26,20 +26,20 @@ No cloud account required. All communication is direct to the inverter on your l
 
 ## Dashboard preview
 
-The AlphaESS dashboard provides three Home Assistant views: **Main**, **Readings** and **Diagnostics**. Native panels stack on phones.
+The AlphaESS dashboard provides three Home Assistant views: **Main**, **Readings** and **Diagnostics**. On phones, Main starts with the flow and four summary readings, Force charging, Force discharging and Dispatch.
 
 **Main** keeps the four-node flow and its battery charge, health, temperature and work-mode readings together. Force charging/discharging, export/import, Peak Shaving, operating settings, schedules and maintenance are on the same page. **Readings** contains daily energy, solar strings, battery details, filtered power and house-energy estimates. Diagnostics remains separate.
 
-![AlphaESS Main — local preview with example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-main.png)
+![AlphaESS Main — light theme with daytime example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/8dc2acd8e9efa9e95f43aafbd9c827b1f4f6826b/docs/images/dashboard-main.png)
 
 <details>
 <summary>Readings, Diagnostics and phone previews</summary>
 
-![AlphaESS Readings — local preview with example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-readings.png)
+![AlphaESS Readings — light theme with daytime example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/8dc2acd8e9efa9e95f43aafbd9c827b1f4f6826b/docs/images/dashboard-readings.png)
 
-![AlphaESS Diagnostics — local preview with example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-diagnostics.png)
+![AlphaESS Diagnostics — light theme with daytime example data](https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/8dc2acd8e9efa9e95f43aafbd9c827b1f4f6826b/docs/images/dashboard-diagnostics.png)
 
-<img src="https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/cbf2b9229f95cfb16cfa224b13fe6c2c447e49ae/docs/images/dashboard-mobile.png" alt="AlphaESS Main on a 390-pixel phone viewport — local preview with example data" width="390">
+<img src="https://raw.githubusercontent.com/PlainSeer/ha-alphaess-modbus-tcp/8dc2acd8e9efa9e95f43aafbd9c827b1f4f6826b/docs/images/dashboard-mobile.png" alt="AlphaESS Main on a 390-pixel phone viewport — light theme with daytime example data" width="390">
 
 </details>
 
@@ -236,6 +236,9 @@ These sensors have a 1 s `scan_interval` but the master loop runs at 2 s in Norm
 | Grid Voltage Phase A | V | 5 s | |
 | Grid Voltage Phase B | V | 5 s | |
 | Grid Voltage Phase C | V | 5 s | |
+| Grid Current Phase A | A | 5 s | Current magnitude, without import/export direction |
+| Grid Current Phase B | A | 5 s | Current magnitude, without import/export direction |
+| Grid Current Phase C | A | 5 s | Current magnitude, without import/export direction |
 | Max Feed to Grid | % | 5 s | Grid export limit as % of installed PV capacity |
 
 #### Inverter

@@ -3,6 +3,7 @@
 Discovery happens in Python during setup, not in a browser strategy. The
 result is ordinary saved configuration and works before custom JS registers.
 """
+from copy import deepcopy
 import re
 
 from homeassistant.helpers import device_registry as dr, entity_registry as er
@@ -51,10 +52,25 @@ def _entities(title, entities):
 
 
 def _view(title, path, cards, icon):
-    # Two native sections give the phone a single logical reading order.
+    # Preserve the two desktop columns; Main adds its own narrow-screen order.
     return {"title": title, "path": path, "icon": icon, "type": "sections", "max_columns": 2,
             "sections": [{"type": "grid", "cards": cards[::2]},
                          {"type": "grid", "cards": cards[1::2]}]}
+
+
+def main_sections_for_screens(sections):
+    """Keep desktop columns and give narrow screens one ordered native section."""
+    cards = [card for section in sections for card in section["cards"]]
+    priority = ("custom:alphaess-power-flow", "Force charging", "Force discharging", "Dispatch")
+    key = lambda card: card.get("title", card.get("type"))
+    mobile = [card for name in priority for card in cards if key(card) == name]
+    mobile.extend(card for card in cards if key(card) not in priority)
+    desktop = deepcopy(sections)
+    for section in desktop:
+        section["visibility"] = [*section.get("visibility", []),
+                                 {"condition": "screen", "media_query": "(min-width: 768px)"}]
+    return [*desktop, {"type": "grid", "cards": deepcopy(mobile),
+                       "visibility": [{"condition": "screen", "media_query": "(max-width: 767px)"}]}]
 
 
 def build_dashboard(entities, devices):
@@ -88,9 +104,9 @@ def build_dashboard(entities, devices):
                 readings.append(_entities(title, rows))
         controls, used = [], set()
         for key, title in [("force_charging", "Force charging"), ("force_discharging", "Force discharging"),
-                           ("force_export", "Force export"), ("force_import", "Force import"),
-                           ("peak_shaving", "Peak shaving"), ("excess_export", "Excess export"),
-                           ("dispatch", "Dispatch")]:
+                           ("dispatch", "Dispatch"), ("force_import", "Force import"),
+                           ("force_export", "Force export"), ("excess_export", "Excess export"),
+                           ("peak_shaving", "Peak shaving")]:
             rows = []
             for (domain, stable), e in indexed.items():
                 if stable != key and not stable.startswith(key + "_"):
@@ -127,7 +143,9 @@ def build_dashboard(entities, devices):
             for k in matches:
                 del remaining[k]
         # Preserve the existing routes while moving the cards between saved views.
-        views.extend([_view(prefix + "Main", f"{entry}-overview", [flow, *controls], "mdi:solar-panel"),
+        main = _view(prefix + "Main", f"{entry}-overview", [flow, *controls], "mdi:solar-panel")
+        main["sections"] = main_sections_for_screens(main["sections"])
+        views.extend([main,
                       _view(prefix + "Readings", f"{entry}-controls", readings, "mdi:chart-box-outline"),
                       _view(prefix + "Diagnostics", f"{entry}-diagnostics", diagnostics, "mdi:information-outline")])
     return {"views": views} if views else None

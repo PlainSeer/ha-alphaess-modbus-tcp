@@ -233,6 +233,22 @@ SENSOR_REGISTERS: list[ModbusSensorDef] = [
                     description="Phase C grid voltage",
                     group="Grid Power"),
 
+    ModbusSensorDef("current_phase_a_grid", "Grid Current Phase A",
+                    0x0017, "int16", unit="A", device_class="current",
+                    scale=0.1, precision=1, scan_interval=5,
+                    description="Phase A grid current (magnitude, no direction)",
+                    group="Grid Power"),
+    ModbusSensorDef("current_phase_b_grid", "Grid Current Phase B",
+                    0x0018, "int16", unit="A", device_class="current",
+                    scale=0.1, precision=1, scan_interval=5,
+                    description="Phase B grid current (magnitude, no direction)",
+                    group="Grid Power"),
+    ModbusSensorDef("current_phase_c_grid", "Grid Current Phase C",
+                    0x0019, "int16", unit="A", device_class="current",
+                    scale=0.1, precision=1, scan_interval=5,
+                    description="Phase C grid current (magnitude, no direction)",
+                    group="Grid Power"),
+
     # --- Power: battery ---
     ModbusSensorDef("power_battery", "Battery Power",
                     0x0126, "int16", unit="W", device_class="power",

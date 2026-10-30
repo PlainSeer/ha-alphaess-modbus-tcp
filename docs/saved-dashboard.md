@@ -21,9 +21,24 @@ open more-info rather than running a button immediately. Diagnostics shows each
 enabled sensor and binary sensor once. Panels stack on phones and follow the
 active Home Assistant theme.
 
+The first control groups use this two-column order on wider screens:
+
+| Left | Right |
+| --- | --- |
+| Battery & Grid | Force charging |
+| Force discharging | Dispatch |
+| Force import | Force export |
+| Excess export | Peak shaving |
+
+Operating settings, operating modes, scheduling and maintenance continue below.
+Below 768 pixels, Main starts with Battery & Grid (including its four summary
+readings), Force charging, Force discharging and Dispatch. The other cards keep
+their previous stacked order. At 768 pixels and above, the two desktop columns
+are retained. Screen-size visibility uses native Home Assistant configuration.
+
 ## Install and migration
 
-Update to v1.20.2 through HACS, restart Home Assistant, then refresh its frontend.
+Update to v1.21.0 through HACS, restart Home Assistant, then refresh its frontend.
 Beta releases do not need to be enabled. HACS displays the README for the installed
 version, so an older installation may still show older previews until updated. During
 integration setup, entity registry entries are matched by platform, config-entry
