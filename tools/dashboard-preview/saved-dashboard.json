@@ -195,6 +195,12 @@
                 "action": "more-info"
               }
             }
+          ],
+          "visibility": [
+            {
+              "condition": "screen",
+              "media_query": "(min-width: 768px)"
+            }
           ]
         },
         {
@@ -372,6 +378,381 @@
               "icon_tap_action": {
                 "action": "more-info"
               }
+            }
+          ],
+          "visibility": [
+            {
+              "condition": "screen",
+              "media_query": "(min-width: 768px)"
+            }
+          ]
+        },
+        {
+          "type": "grid",
+          "cards": [
+            {
+              "type": "custom:alphaess-power-flow",
+              "entities": {
+                "solar": "sensor.alphaess_inverter_current_pv_production",
+                "grid": "sensor.alphaess_inverter_grid_power",
+                "battery": "sensor.alphaess_inverter_battery_power",
+                "house": "sensor.alphaess_inverter_current_house_load",
+                "soc": "sensor.alphaess_inverter_battery_state_of_charge",
+                "health": "sensor.alphaess_inverter_battery_state_of_health",
+                "temperature": "sensor.alphaess_inverter_battery_max_cell_temp",
+                "mode": "sensor.alphaess_inverter_inverter_work_mode"
+              }
+            },
+            {
+              "type": "entities",
+              "title": "Force charging",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "number.alphaess_inverter_force_charging_duration",
+                  "name": "Force Charging Duration"
+                },
+                {
+                  "entity": "number.alphaess_inverter_force_charging_power",
+                  "name": "Force Charging Power"
+                },
+                {
+                  "entity": "number.alphaess_inverter_force_charging_stop_at_soc",
+                  "name": "Force Charging Stop at SoC"
+                },
+                {
+                  "entity": "sensor.alphaess_inverter_force_charging_countdown",
+                  "name": "Force Charging Countdown"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_force_charging",
+                  "name": "Force Charging"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_force_charging_hold",
+                  "name": "Force Charging Hold"
+                }
+              ]
+            },
+            {
+              "type": "entities",
+              "title": "Force discharging",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "number.alphaess_inverter_force_discharging_duration",
+                  "name": "Force Discharging Duration"
+                },
+                {
+                  "entity": "number.alphaess_inverter_force_discharging_power",
+                  "name": "Force Discharging Power"
+                },
+                {
+                  "entity": "number.alphaess_inverter_force_discharging_stop_at_soc",
+                  "name": "Force Discharging Stop at SoC"
+                },
+                {
+                  "entity": "sensor.alphaess_inverter_force_discharging_countdown",
+                  "name": "Force Discharging Countdown"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_force_discharging",
+                  "name": "Force Discharging"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_force_discharging_hold",
+                  "name": "Force Discharging Hold"
+                }
+              ]
+            },
+            {
+              "type": "entities",
+              "title": "Dispatch",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "number.alphaess_inverter_dispatch_duration",
+                  "name": "Dispatch Duration"
+                },
+                {
+                  "entity": "number.alphaess_inverter_dispatch_power",
+                  "name": "Dispatch Power"
+                },
+                {
+                  "entity": "number.alphaess_inverter_dispatch_stop_at_soc",
+                  "name": "Dispatch Stop at SoC"
+                },
+                {
+                  "entity": "select.alphaess_inverter_dispatch_mode",
+                  "name": "Dispatch Mode"
+                },
+                {
+                  "entity": "sensor.alphaess_inverter_dispatch_time_remaining",
+                  "name": "Dispatch Time Remaining"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_dispatch",
+                  "name": "Dispatch"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_dispatch_pv_enabled",
+                  "name": "Dispatch PV Enabled"
+                }
+              ]
+            },
+            {
+              "type": "entities",
+              "title": "Force import",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "binary_sensor.alphaess_inverter_force_import_pause",
+                  "name": "Force Import Pause"
+                },
+                {
+                  "entity": "number.alphaess_inverter_force_import_duration",
+                  "name": "Force Import Duration"
+                },
+                {
+                  "entity": "number.alphaess_inverter_force_import_power",
+                  "name": "Force Import Power"
+                },
+                {
+                  "entity": "number.alphaess_inverter_force_import_stop_at_soc",
+                  "name": "Force Import Stop at SoC"
+                },
+                {
+                  "entity": "sensor.alphaess_inverter_force_import_countdown",
+                  "name": "Force Import Countdown"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_force_import",
+                  "name": "Force Import"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_force_import_hold",
+                  "name": "Force Import Hold"
+                }
+              ]
+            },
+            {
+              "type": "entities",
+              "title": "Excess export",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "binary_sensor.alphaess_inverter_excess_export_pause",
+                  "name": "Excess Export Pause"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_excess_export",
+                  "name": "Excess Export"
+                }
+              ]
+            },
+            {
+              "type": "entities",
+              "title": "Operating settings",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "number.alphaess_inverter_charging_cutoff_soc",
+                  "name": "Charging Cutoff SoC"
+                },
+                {
+                  "entity": "number.alphaess_inverter_discharging_cutoff_soc",
+                  "name": "Discharging Cutoff SoC"
+                },
+                {
+                  "entity": "number.alphaess_inverter_max_feed_to_grid",
+                  "name": "Max Feed to Grid"
+                }
+              ]
+            },
+            {
+              "type": "entities",
+              "title": "Scheduling",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "time.alphaess_inverter_charging_period_1_start_time",
+                  "name": "Charging Period 1 Start Time"
+                },
+                {
+                  "entity": "time.alphaess_inverter_charging_period_1_stop_time",
+                  "name": "Charging Period 1 Stop Time"
+                },
+                {
+                  "entity": "time.alphaess_inverter_charging_period_2_start_time",
+                  "name": "Charging Period 2 Start Time"
+                },
+                {
+                  "entity": "time.alphaess_inverter_charging_period_2_stop_time",
+                  "name": "Charging Period 2 Stop Time"
+                },
+                {
+                  "entity": "time.alphaess_inverter_discharging_period_1_start_time",
+                  "name": "Discharging Period 1 Start Time"
+                },
+                {
+                  "entity": "time.alphaess_inverter_discharging_period_1_stop_time",
+                  "name": "Discharging Period 1 Stop Time"
+                },
+                {
+                  "entity": "time.alphaess_inverter_discharging_period_2_start_time",
+                  "name": "Discharging Period 2 Start Time"
+                },
+                {
+                  "entity": "time.alphaess_inverter_discharging_period_2_stop_time",
+                  "name": "Discharging Period 2 Stop Time"
+                }
+              ]
+            },
+            {
+              "type": "tile",
+              "entity": "button.alphaess_inverter_dispatch_reset",
+              "name": "Dispatch Reset",
+              "tap_action": {
+                "action": "more-info"
+              },
+              "icon_tap_action": {
+                "action": "more-info"
+              }
+            },
+            {
+              "type": "tile",
+              "entity": "button.alphaess_inverter_restart_ems",
+              "name": "Restart EMS",
+              "tap_action": {
+                "action": "more-info"
+              },
+              "icon_tap_action": {
+                "action": "more-info"
+              }
+            },
+            {
+              "type": "tile",
+              "entity": "button.alphaess_inverter_sync_dispatch_state",
+              "name": "Sync Dispatch State",
+              "tap_action": {
+                "action": "more-info"
+              },
+              "icon_tap_action": {
+                "action": "more-info"
+              }
+            },
+            {
+              "type": "entities",
+              "title": "Force export",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "number.alphaess_inverter_force_export_duration",
+                  "name": "Force Export Duration"
+                },
+                {
+                  "entity": "number.alphaess_inverter_force_export_power",
+                  "name": "Force Export Power"
+                },
+                {
+                  "entity": "number.alphaess_inverter_force_export_stop_at_soc",
+                  "name": "Force Export Stop at SoC"
+                },
+                {
+                  "entity": "sensor.alphaess_inverter_force_export_countdown",
+                  "name": "Force Export Countdown"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_force_export",
+                  "name": "Force Export"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_force_export_hold",
+                  "name": "Force Export Hold"
+                }
+              ]
+            },
+            {
+              "type": "entities",
+              "title": "Peak shaving",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "binary_sensor.alphaess_inverter_peak_shaving_paused",
+                  "name": "Peak Shaving Paused"
+                },
+                {
+                  "entity": "number.alphaess_inverter_peak_shaving_below_soc",
+                  "name": "Peak Shaving Below SoC"
+                },
+                {
+                  "entity": "number.alphaess_inverter_peak_shaving_grid_import_limit",
+                  "name": "Peak Shaving Grid Import Limit"
+                },
+                {
+                  "entity": "switch.alphaess_inverter_peak_shaving",
+                  "name": "Peak Shaving"
+                }
+              ]
+            },
+            {
+              "type": "entities",
+              "title": "Operating modes",
+              "show_header_toggle": false,
+              "entities": [
+                {
+                  "entity": "select.alphaess_inverter_charging_discharging_settings",
+                  "name": "Charging / Discharging Settings"
+                },
+                {
+                  "entity": "select.alphaess_inverter_inverter_ac_limit",
+                  "name": "Inverter AC Limit"
+                }
+              ]
+            },
+            {
+              "type": "heading",
+              "heading": "Maintenance",
+              "icon": "mdi:tools"
+            },
+            {
+              "type": "tile",
+              "entity": "button.alphaess_inverter_reset_energy_totals",
+              "name": "Reset Energy Totals",
+              "tap_action": {
+                "action": "more-info"
+              },
+              "icon_tap_action": {
+                "action": "more-info"
+              }
+            },
+            {
+              "type": "tile",
+              "entity": "button.alphaess_inverter_restart_pcs",
+              "name": "Restart PCS",
+              "tap_action": {
+                "action": "more-info"
+              },
+              "icon_tap_action": {
+                "action": "more-info"
+              }
+            },
+            {
+              "type": "tile",
+              "entity": "button.alphaess_inverter_synchronise_date_time",
+              "name": "Synchronise Date & Time",
+              "tap_action": {
+                "action": "more-info"
+              },
+              "icon_tap_action": {
+                "action": "more-info"
+              }
+            }
+          ],
+          "visibility": [
+            {
+              "condition": "screen",
+              "media_query": "(max-width: 767px)"
             }
           ]
         }

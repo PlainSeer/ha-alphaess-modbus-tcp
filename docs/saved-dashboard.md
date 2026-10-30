@@ -31,7 +31,10 @@ The first control groups use this two-column order on wider screens:
 | Excess export | Peak shaving |
 
 Operating settings, operating modes, scheduling and maintenance continue below.
-On phones, the left section stacks before the right section.
+Below 768 pixels, Main starts with Battery & Grid (including its four summary
+readings), Force charging, Force discharging and Dispatch. The other cards keep
+their previous stacked order. At 768 pixels and above, the two desktop columns
+are retained. Screen-size visibility uses native Home Assistant configuration.
 
 ## Install and migration
 
