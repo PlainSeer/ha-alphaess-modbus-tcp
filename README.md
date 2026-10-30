@@ -45,7 +45,7 @@ The AlphaESS dashboard provides three Home Assistant views: **Main**, **Readings
 
 Images use the production flow card and representative native panels with example readings; they are not screenshots of a connected inverter. Native card appearance follows your HA version and theme.
 
-After integration setup, an **AlphaESS** dashboard is created automatically. Customised, YAML and unrelated dashboards are preserved. [Setup, migration and rollback](docs/saved-dashboard.md).
+After integration setup, an **AlphaESS** dashboard is created automatically. The default dashboard follows integration updates, including new sensors and layout changes. Manual edits to this default are replaced after backup; use a separate dashboard copy for permanent customisations. YAML and unrelated dashboards are preserved. [Setup, migration and rollback](docs/saved-dashboard.md).
 
 ## About this project
 
@@ -236,9 +236,9 @@ These sensors have a 1 s `scan_interval` but the master loop runs at 2 s in Norm
 | Grid Voltage Phase A | V | 5 s | |
 | Grid Voltage Phase B | V | 5 s | |
 | Grid Voltage Phase C | V | 5 s | |
-| Grid Current Phase A | A | 5 s | Current magnitude, without import/export direction |
-| Grid Current Phase B | A | 5 s | Current magnitude, without import/export direction |
-| Grid Current Phase C | A | 5 s | Current magnitude, without import/export direction |
+| Grid Current Phase A | A | 5 s | Inverter-reported current; sign convention depends on inverter/meter |
+| Grid Current Phase B | A | 5 s | Inverter-reported current; sign convention depends on inverter/meter |
+| Grid Current Phase C | A | 5 s | Inverter-reported current; sign convention depends on inverter/meter |
 | Max Feed to Grid | % | 5 s | Grid export limit as % of installed PV capacity |
 
 #### Inverter
@@ -564,7 +564,7 @@ If two inverters are configured, the service writes the same value to all instan
 
 ## Dashboards
 
-The default saved dashboard uses registry-based entity discovery during setup. Renamed entities and multiple inverters are supported. Main includes every enabled setting, and Diagnostics includes every enabled sensor once. Hidden, disabled and restored orphan entities are omitted. Customising the saved dashboard detaches it from automatic registry refreshes. See the [dashboard guide](docs/managed-dashboard.md).
+The default saved dashboard uses registry-based entity discovery during setup. Renamed entities and multiple inverters are supported. Main includes every enabled setting, and Diagnostics includes every enabled sensor once. Hidden, disabled and restored orphan entities are omitted. The integration-owned default refreshes on setup and entity/device registry changes, even after manual edits. Use a separate copy for permanent customisations. See the [dashboard guide](docs/managed-dashboard.md).
 
 ### Static dashboard examples
 

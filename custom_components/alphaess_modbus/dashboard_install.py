@@ -1,7 +1,7 @@
 """Create the default AlphaESS dashboard using HA's Lovelace APIs.
 
-Only migrate the three-view beta produced by this fork; never replace an
-arbitrary dashboard, change the user's HA landing page, or call a service.
+Maintain the integration-owned default, including previously edited layouts.
+Never replace an unrelated dashboard, change the HA landing page, or call a service.
 """
 import logging
 import asyncio
@@ -52,13 +52,19 @@ async def async_install_dashboard(hass):
         if not isinstance(current, LovelaceStorage):
             return  # YAML dashboards remain user-managed.
         config = await current.async_load(False)
-        if is_beta_dashboard(config) or config == STRATEGY or config == saved.get("config"):
+        # Ownership survives manual edits. A separate copy at another URL is
+        # user-managed; a dashboard merely sharing our URL is not enough.
+        if is_beta_dashboard(config) or config == STRATEGY or isinstance(saved.get("config"), dict):
             if config == generated:
                 return
             # A targeted rollback record, saved before replacing the known beta.
             backup = Store(hass, 1, "alphaess_modbus.saved_dashboard_backup")
             if not await backup.async_load():
                 await backup.async_save({"url_path": URL_PATH, "config": config})
+            # Retain the original migration backup and the immediately previous
+            # layout. A failed backup must prevent replacement.
+            previous = Store(hass, 1, "alphaess_modbus.saved_dashboard_previous")
+            await previous.async_save({"url_path": URL_PATH, "config": config})
             await current.async_save(generated)
             await owner.async_save({"config": generated})
         return
@@ -80,7 +86,7 @@ async def async_install_dashboard(hass):
 
 
 def async_watch_dashboard(hass):
-    """Debounce registry changes; save only our unchanged generated dashboard."""
+    """Debounce registry changes; refresh our owned default only when needed."""
     key = "alphaess_modbus_saved_dashboard_watcher"
     if key in hass.data:
         return
