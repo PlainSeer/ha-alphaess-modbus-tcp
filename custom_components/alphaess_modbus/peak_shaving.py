@@ -223,8 +223,8 @@ class AlphaESSPeakShavingSwitch(AlphaESSSwitch):
             try:
                 await self._evaluate(time.monotonic())
             except Exception:
-                # A failed write may have reached the inverter. Stop this session
-                # and attempt one reset, rather than repeatedly retrying commands.
+                # A failed write may have reached the inverter. Stop local
+                # control without issuing an unexplained recovery reset.
                 self._is_on = False
                 self._stop_callbacks()
                 self.reason = "write_failed"

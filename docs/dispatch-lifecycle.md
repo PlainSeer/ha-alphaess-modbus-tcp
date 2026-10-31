@@ -9,7 +9,10 @@ by updating this documentation or the development branch.
 Force Charging, Force Discharging, Force Export, Force Import and generic Dispatch
 remain fixed-duration modes. Explicitly enabling one or changing its duration
 starts a new session and generation. A suspended fault requires an explicit new
-start; changing a parameter alone does not silently recover it. The deadline begins at turn-on, including
+start; changing a parameter alone does not silently recover it. A successful
+restart keeps an already-on switch on, avoiding synthetic off/on events that
+could trigger other automations. A failed restart still turns local control off
+and reports the error. The deadline begins at turn-on, including
 when Force Export/Import must wait for data before its first command.
 
 Power and cutoff-SOC changes retain that deadline. Immediately before a command
@@ -44,7 +47,7 @@ Dispatch Reset remains the explicit way to stop the inverter after reload.
 
 ## Outcomes and feedback
 
-Dispatch switch attributes expose `dispatch_status`, `dispatch_error`,
+Dispatch switch attributes expose `dispatch_status`, `dispatch_error`, `dispatch_suspended`,
 `requested_command`, `acknowledged_command` and `uncertain_command`. The command
 arrays follow the 11-register block in the register map. An acknowledgement is
 not a claim that a mode is still running indefinitely.
@@ -53,6 +56,9 @@ not a claim that a mode is still running indefinitely.
   the retry policy could not be safely selected. A guard/deadline can also skip
   stale work without transmitting it.
 - **Rejected:** a definitive inverter exception such as illegal address/value.
+- **Busy:** exception 6 is an explicit transient rejection. The rejected command
+  is not recorded as uncertain or acknowledged. It can be retried within the
+  same bounded budget; exhausted busy attempts report `dispatch_status: busy`.
 - **Indeterminate:** a reply was lost or a device/processing/gateway error cannot
   establish whether the command applied. In particular, a locally synthesized
   pymodbus timeout response is not treated as an inverter rejection.
@@ -81,8 +87,9 @@ Locally valid session identity is also required.
 
 A timed-out attempted command can be confirmed by read-back. If it already applied
 and no newer servo update is pending, it is not replayed. Other transient failures
-have at most three controller attempts, with 0.5- and 1-second backoff. Definitive
-rejection, conflict or exhausted attempts suspend automatic writes until an
+have at most three controller attempts, with 0.5- and 1-second backoff. Service
+starts/parameter writes and Peak Shaving also retry busy responses, without
+adding another retry budget inside the servo. Permanent rejection, conflict or exhausted attempts suspend automatic writes until an
 explicit new start (Peak Shaving also retains its existing inactive-dispatch
 prerequisite). Failures do not cause automatic reset or automatic restart.
 A suspended session does not reset an unexplained external command at its deadline.
@@ -93,9 +100,22 @@ under the shared lock. The client/transaction/context retry setting is restored 
 pymodbus 3.7.4 and 3.16.1. An unsupported retry layout fails before sending.
 
 Automatic deadline/SOC stops and Excess Export/Peak Shaving pauses remain, subject
-to session and consistency checks. An already inactive dispatch does not need a
-second automatic stop write. Explicit stop services and Dispatch Reset retain
-their explicit-stop role and existing reset register block.
+to session and consistency checks. Transient pause and automatic-stop failures
+have at most three attempts. Each retry rechecks local authorization and reads
+the dispatch block before writing: a conflicting external command vetoes the
+retry, and an already inactive dispatch confirms success without a duplicate
+stop. A reset, unload or newer session invalidates old retries. Exhausted pause
+failures remain enabled but explicitly suspended; automatic-stop failures leave
+the local switch off with fault/uncertain-command attributes. Neither silently
+resumes. Explicit stop services retry busy only, and still raise on uncertain
+failure. Dispatch Reset retains one stop transmission followed by direct
+`0x0880` verification; it never retries an uncertain reset write.
+
+Dispatch Reset invalidates controllers before waiting for the control lock or
+draining transactions. Starts already queued behind a slow start are rejected
+while Reset is pending. After Reset completes or raises, explicit starts are
+allowed again. The stop register block is unchanged, and verification errors
+continue to abort HA recovery scripts using normal error handling.
 
 The raw `write_register` service remains an explicit register write. A raw write
 within `0x0880..0x088A` first relinquishes local dispatch sessions without adding
@@ -112,3 +132,6 @@ cases cover eight-hour starts, power/SOC updates, Charging Hold, Mode 1 at -8/0 
 Mode 19, explicit return from holds and both recovery-script failure sequences.
 They simulate Modbus and are not a substitute for a separately approved hardware
 validation. No HA configuration or PredBat settings are changed by this patch.
+Follow-up cases cover Reset behind an in-flight start, queued restarts, actual HA
+state events during duration changes, bounded busy responses, pause/stop replies
+lost before or after application, and external/new-session takeover during backoff.

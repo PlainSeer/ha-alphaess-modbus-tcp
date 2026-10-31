@@ -9,6 +9,7 @@ from typing import Any
 from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -24,7 +25,7 @@ from .const import (
     DISPATCH_PV_UNCHANGED,
 )
 from .coordinator import AlphaESSCoordinator
-from .dispatch import DispatchWriteError, WriteNotSent, WriteRejected, WriteIndeterminate, DispatchConflict, command_matches
+from .dispatch import DispatchWriteError, WriteNotSent, WriteRejected, WriteBusy, WriteIndeterminate, DispatchConflict, command_matches
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -201,6 +202,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         if self.switch_key not in _MUTEX_SWITCHES:
             return {}
         return {"dispatch_status": self._dispatch_status, "dispatch_error": self._last_error,
+                "dispatch_suspended": self._suspended,
                 "requested_command": self._requested, "acknowledged_command": self._acknowledged,
                 "uncertain_command": self._uncertain}
 
@@ -213,6 +215,8 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         async with _control_lock(self._coordinator):
+            if self.switch_key in _MUTEX_SWITCHES and getattr(self._coordinator, "_dispatch_resetting", 0):
+                raise HomeAssistantError("Dispatch Reset is in progress; wait before starting a new session")
             return await self._turn_on(**kwargs)
 
     async def _turn_on(self, **kwargs: Any) -> None:
@@ -229,32 +233,34 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
 
         if getattr(self._coordinator, "_unloading", False):
             raise RuntimeError("Integration is unloading")
-        self.prepare_force_off()
+        if getattr(self._coordinator, "_dispatch_resetting", 0):
+            raise HomeAssistantError("Dispatch Reset is in progress; wait before starting a new session")
+        # Invalidate old callbacks without publishing an off/on transition for
+        # an already-enabled controller (for example a PredBat duration update).
+        self._invalidate_control()
         generation = self._control_generation
         self._requested = self._acknowledged = self._uncertain = None
         self._suspended = False
         self._dispatch_status = "starting"
         self._last_error = None
 
-        # A peak-shaving stop can already be waiting for an in-flight write.
-        # Drain it before another mode starts, even though its switch is now off.
-        peak = self.hass.data[DOMAIN].get(f"{self._entry.entry_id}_switches", {}).get("peak_shaving")
-        if peak and peak.stopping:
-            await peak._async_turn_off_silent()
-
-        # Mutual exclusion: turn off all other mutex switches first
-        switches = self.hass.data[DOMAIN].get(f"{self._entry.entry_id}_switches", {})
-        for key, sw in switches.items():
-            if key in _MUTEX_SWITCHES and key != self.switch_key and sw.is_on:
-                await sw._async_turn_off_silent()
-
-        if generation != self._control_generation or getattr(self._coordinator, "_unloading", False):
-            return
-        self._is_on = True
-        self._coordinator.active_dispatch_key = self.switch_key
-        self.async_write_ha_state()
-
         try:
+            # Include mode handover failures in start cleanup as well.
+            peak = self.hass.data[DOMAIN].get(f"{self._entry.entry_id}_switches", {}).get("peak_shaving")
+            if peak and peak.stopping:
+                await peak._async_turn_off_silent()
+
+            switches = self.hass.data[DOMAIN].get(f"{self._entry.entry_id}_switches", {})
+            for key, sw in switches.items():
+                if key in _MUTEX_SWITCHES and key != self.switch_key and sw.is_on:
+                    await sw._async_turn_off_silent()
+
+            if generation != self._control_generation or getattr(self._coordinator, "_unloading", False):
+                return
+            self._is_on = True
+            self._coordinator.active_dispatch_key = self.switch_key
+            self.async_write_ha_state()
+
             if self.switch_key != "excess_export":
                 duration_s = int(self._num(f"{self.switch_key}_duration", 120.0) * 60)
                 if duration_s <= 0:
@@ -372,6 +378,20 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         if generation == self._control_generation and self._is_on:
             await self._async_turn_off_silent(automatic=True)
 
+    async def _retry_dispatch_write(self, operation, *, valid, errors):
+        """Retry only a still-authorized action, with a single bounded budget."""
+        for attempt in range(3):
+            if not valid() or getattr(self._coordinator, "_unloading", False):
+                return False
+            try:
+                return await operation()
+            except errors:
+                if not valid() or getattr(self._coordinator, "_unloading", False):
+                    return False
+                if attempt == 2:
+                    raise
+                await asyncio.sleep(0.5 * (attempt + 1))
+
     async def _async_turn_off_silent(self, *, automatic=False) -> None:
         candidates = [list(c) for c in (self._acknowledged, self._uncertain) if c is not None]
         suspended = self._suspended
@@ -386,13 +406,25 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             if generation == self._control_generation:
                 self._uncertain = list(command)
                 self._dispatch_status = "awaiting_stop_acknowledgement"
+        valid = lambda: (generation == self._control_generation
+                         and self._coordinator.active_dispatch_key == owner)
+        async def stop():
+            previous_uncertain = self._uncertain
+            try:
+                return await self._coordinator.async_reset_dispatch(
+                    guard=valid,
+                    expected=(lambda: candidates + ([self._uncertain] if self._uncertain is not None else [])) if automatic else None,
+                    attempted=attempted,
+                    acknowledged=lambda command: self.confirm_stopped() if generation == self._control_generation else None,
+                )
+            except WriteRejected:
+                if generation == self._control_generation:
+                    self._uncertain = previous_uncertain
+                raise
         try:
-            await self._coordinator.async_reset_dispatch(
-                guard=lambda: generation == self._control_generation
-                and self._coordinator.active_dispatch_key == owner,
-                expected=(lambda: candidates) if automatic else None,
-                attempted=attempted,
-                acknowledged=lambda command: self.confirm_stopped() if generation == self._control_generation else None,
+            await self._retry_dispatch_write(
+                stop, valid=valid,
+                errors=(WriteNotSent, WriteIndeterminate, WriteBusy) if automatic else (WriteBusy,),
             )
         except (Exception, asyncio.CancelledError) as err:
             if generation == self._control_generation:
@@ -402,15 +434,29 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
 
     async def _pause_dispatch(self):
         generation = self._control_generation
+        valid = lambda: (self._is_on and generation == self._control_generation and not self._suspended
+                         and self._coordinator.active_dispatch_key == self.switch_key
+                         and (self.switch_key != "excess_export" or self._coordinator.ee_paused))
         def ack(command):
             if generation == self._control_generation:
                 self._acknowledged = list(command)
                 self._uncertain = None
-        await self._coordinator.async_reset_dispatch(
-            guard=lambda: self._is_on and generation == self._control_generation and not self._suspended
-            and self._coordinator.active_dispatch_key == self.switch_key,
-            expected=lambda: [c for c in (self._acknowledged, self._uncertain) if c is not None],
-            attempted=lambda command: setattr(self, "_uncertain", list(command)), acknowledged=ack,
+                self._dispatch_status = "paused"
+                self._last_error = None
+        async def pause():
+            previous_uncertain = self._uncertain
+            try:
+                return await self._coordinator.async_reset_dispatch(
+                    guard=valid,
+                    expected=lambda: [c for c in (self._acknowledged, self._uncertain) if c is not None],
+                    attempted=lambda command: setattr(self, "_uncertain", list(command)), acknowledged=ack,
+                )
+            except WriteRejected:
+                if generation == self._control_generation:
+                    self._uncertain = previous_uncertain
+                raise
+        await self._retry_dispatch_write(
+            pause, valid=valid, errors=(WriteNotSent, WriteIndeterminate, WriteBusy),
         )
 
     def _cancel_timer(self) -> None:
@@ -532,7 +578,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                             return
                         await self._start_excess_export()
                         break
-                    except (WriteNotSent, WriteIndeterminate) as err:
+                    except (WriteNotSent, WriteIndeterminate, WriteBusy) as err:
                         if generation != self._control_generation:
                             return
                         if attempt == 2:
@@ -548,7 +594,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                     writer = self._write_export_dispatch if exporting else self._write_import_dispatch
                     await writer(word, int(self._num(f"{self.switch_key}_duration", 120) * 60), reset_timer=False)
                     break
-                except (WriteNotSent, WriteIndeterminate) as err:
+                except (WriteNotSent, WriteIndeterminate, WriteBusy) as err:
                     if generation != self._control_generation:
                         return
                     if attempt == 2:
@@ -598,6 +644,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         generation = self._control_generation
         self._requested = list(values)
         reconciled = False
+        before_attempt = None
 
         def valid():
             return (self._is_on and self._control_generation == generation
@@ -639,7 +686,12 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             return command
 
         def attempted(command):
+            nonlocal before_attempt
             if generation == self._control_generation:
+                # Capture after read-back reconciliation, not before acquiring
+                # the client lock: an older uncertain write may now be known.
+                before_attempt = (self._uncertain, self._attempted_at,
+                                  self._attempted_deadline, self._expected_expiry)
                 self._requested = list(command)
                 self._uncertain = list(command)
                 self._attempted_at = datetime.now(timezone.utc)
@@ -686,20 +738,39 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                 elif self.switch_key == "excess_export":
                     self._ee_last_power_raw, self._ee_last_write_time = command[2], time.monotonic()
 
+        async def write():
+            try:
+                return await self._coordinator.async_write_dispatch(
+                    values, reset_timer=False,
+                    guard=valid, prepare=prepare,
+                    expected=lambda: [c for c in (self._acknowledged, self._uncertain) if c is not None],
+                    attempted=attempted, acknowledged=acknowledged, confirmed=confirmed,
+                )
+            except WriteRejected:
+                # The attempt was explicitly declined. Preserve any older
+                # uncertain command, but never claim this rejected one applied.
+                if generation == self._control_generation and before_attempt is not None:
+                    (self._uncertain, self._attempted_at,
+                     self._attempted_deadline, self._expected_expiry) = before_attempt
+                raise
+
+        servo = asyncio.current_task() is self._servo_worker
         try:
-            accepted = await self._coordinator.async_write_dispatch(
-                values, reset_timer=False,
-                guard=valid, prepare=prepare,
-                expected=lambda: [c for c in (self._acknowledged, self._uncertain) if c is not None],
-                attempted=attempted, acknowledged=acknowledged, confirmed=confirmed,
+            # The servo owns its existing three-attempt budget. Service-driven
+            # writes and Peak Shaving retry busy here, without nested budgets.
+            accepted = await write() if servo else await self._retry_dispatch_write(
+                write, valid=valid, errors=(WriteBusy,),
             )
         except asyncio.CancelledError:
             if generation == self._control_generation:
                 self._record_fault(WriteIndeterminate("Action cancelled; in-flight transaction was drained"))
             raise
+        except WriteBusy as err:
+            if generation == self._control_generation:
+                self._record_fault(err, suspend=not servo)
+            raise
         except WriteRejected as err:
             if generation == self._control_generation:
-                self._uncertain = None
                 self._record_fault(err, suspend=True)
             raise
         except DispatchConflict as err:
@@ -719,12 +790,12 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         self._uncertain = None
         self._dispatch_status = "stopped"
         self._last_error = None
+        self._suspended = False
         self._expected_expiry = None
         self.async_write_ha_state()
 
-    def prepare_force_off(self) -> None:
-        """Stop callbacks synchronously before any controller is drained."""
-        self._is_on = False
+    def _invalidate_control(self) -> None:
+        """Invalidate callbacks without introducing a synthetic state change."""
         self._control_generation += 1
         self._deadline = None
         self._servo_pending = False
@@ -738,6 +809,11 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             self._coordinator.ee_paused = False
         elif self.switch_key == "force_import":
             self._coordinator.fi_paused = False
+
+    def prepare_force_off(self) -> None:
+        """Stop callbacks synchronously before any controller is drained."""
+        self._is_on = False
+        self._invalidate_control()
         self.async_write_ha_state()
 
     async def async_force_off(self) -> None:

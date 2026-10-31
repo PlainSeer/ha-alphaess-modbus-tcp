@@ -10,7 +10,7 @@ from typing import Any, Awaitable, Callable
 from pymodbus.client import AsyncModbusTcpClient
 from pymodbus.exceptions import ModbusException
 
-from .dispatch import WriteNotSent, WriteRejected, WriteIndeterminate, DispatchConflict, command_matches
+from .dispatch import WriteNotSent, WriteRejected, WriteBusy, WriteIndeterminate, DispatchConflict, command_matches
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -309,7 +309,9 @@ class AlphaESSModbusClient:
                     # A transport timeout can be a synthesized ExceptionResponse.
                     # Processing/device/gateway errors do not prove non-application.
                     code = getattr(result, "exception_code", None)
-                    if code not in (1, 2, 3, 6):
+                    if code == 6:
+                        raise WriteBusy("Inverter busy (exception 6)")
+                    if code not in (1, 2, 3):
                         self._teardown_client()
                         raise WriteIndeterminate(f"No authoritative dispatch acknowledgement: {result}")
                     raise WriteRejected(f"Inverter rejected dispatch (exception {code})")

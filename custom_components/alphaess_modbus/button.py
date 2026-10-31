@@ -103,7 +103,7 @@ class AlphaESSButton(ButtonEntity):
             raise ValueError(f"Unknown dispatch state: {value!r}")
         return value
 
-    async def _clear_dispatch_controls(self, *, preserve: set[str] | None = None) -> None:
+    def _prepare_dispatch_controls(self, *, preserve: set[str] | None = None):
         from .switch import _MUTEX_SWITCHES
 
         switches = self.hass.data[DOMAIN].get(f"{self._entry_id}_switches", {})
@@ -112,13 +112,23 @@ class AlphaESSButton(ButtonEntity):
         # Stop every producer before the first await can let queued work run.
         for sw in controls:
             sw.prepare_force_off()
-        for sw in controls:
+        return controls
+
+    async def _clear_dispatch_controls(self, *, preserve: set[str] | None = None) -> None:
+        for sw in self._prepare_dispatch_controls(preserve=preserve):
             await sw.async_force_off()
 
     async def _reset_dispatch(self) -> None:
         from .switch import _control_lock
-        async with _control_lock(self._coordinator):
-            await self._reset_dispatch_locked()
+        # A start can hold the control lock while reconnecting. Invalidate it
+        # before waiting, and prevent queued starts from reviving a controller.
+        self._coordinator._dispatch_resetting = getattr(self._coordinator, "_dispatch_resetting", 0) + 1
+        try:
+            self._prepare_dispatch_controls()
+            async with _control_lock(self._coordinator):
+                await self._reset_dispatch_locked()
+        finally:
+            self._coordinator._dispatch_resetting -= 1
 
     async def _reset_dispatch_locked(self) -> None:
         try:

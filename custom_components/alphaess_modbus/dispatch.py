@@ -17,6 +17,11 @@ class WriteRejected(DispatchWriteError):
     outcome = "rejected"
 
 
+class WriteBusy(WriteRejected):
+    """The server explicitly declined this attempt because it is busy."""
+    outcome = "busy"
+
+
 class WriteIndeterminate(DispatchWriteError):
     outcome = "indeterminate"
 
