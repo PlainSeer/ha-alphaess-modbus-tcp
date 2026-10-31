@@ -101,7 +101,8 @@ Renames, removals and visibility changes remain supported; unrelated registry
 edits do not wake the dashboard updater. This does not alter live state updates.
 Setup, preference changes and background refreshes use the same save lock.
 
-A pending-save record is persisted before replacing the layout. If a layout or
+Ownership and backup records use HA's atomic storage writes. A pending-save
+record is persisted before replacing the layout. If a layout or
 ownership-completion save fails, the next setup or relevant refresh retries it,
 even when HA's in-memory cache already shows the attempted layout. The last
 working layout backup is retained. A failed initial layout can also be completed
@@ -139,4 +140,3 @@ edits, protection of unrelated/YAML/custom-copy dashboards, entity
 coverage and multiple inverters, passive flow interactions and signed readings.
 Browser checks cover Chromium and WebKit at phone/tablet/desktop widths. A real
 iPhone Companion App cold-start check is still required after installation.
-
