@@ -78,7 +78,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(f"Cannot connect to {host}:{port}")
 
     coordinator = AlphaESSCoordinator(hass, entry, client)
-    await coordinator.async_config_entry_first_refresh()
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except BaseException:
+        await client.close()
+        raise
 
     raw_sn = (coordinator.data.get("inverter_sn") or "").strip().rstrip("\x00").strip()
     _model = _detect_model(raw_sn)
@@ -92,7 +96,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             value: int = call.data["value"]
             # hass.data[DOMAIN] also holds non-coordinator entries (e.g. the
             # per-entry switches map), so only call coordinators.
-            for obj in hass.data[DOMAIN].values():
+            for obj in list(hass.data[DOMAIN].values()):
                 if isinstance(obj, AlphaESSCoordinator):
                     await obj.async_write_raw(address, value)
 
@@ -134,7 +138,33 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    from homeassistant.components import persistent_notification
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    switches = hass.data[DOMAIN].get(f"{entry.entry_id}_switches", {})
+    owner = coordinator.active_dispatch_key
+    remaining = []
+    for key, sw in switches.items():
+        if key == owner or (owner is None and sw._uncertain is not None):
+            expiry = sw._expected_expiry.isoformat() if sw._expected_expiry else "unknown"
+            remaining.append(f"{sw._attr_name}: expected end {expiry}")
+    if remaining:
+        persistent_notification.async_create(
+            hass, "Integration unloading; dispatch may still be running on the inverter. "
+            + "; ".join(remaining) + ". Unacknowledged writes make expiry uncertain. "
+            "After reload, Dispatch Reset explicitly stops dispatch. No mode is resumed automatically.",
+            title="AlphaESS dispatch may remain active", notification_id=f"alphaess_unload_{entry.entry_id}",
+        )
+    coordinator._unloading = True
+    # Stop all producers before awaiting even the first platform removal.
+    from .switch import _MUTEX_SWITCHES
+    for key, sw in switches.items():
+        if key in _MUTEX_SWITCHES:
+            sw.prepare_force_off()
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not unloaded:
+        # Keep the connection usable for explicit recovery, but do not resume.
+        coordinator._unloading = False
     if unloaded:
         coordinator: AlphaESSCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
         hass.data[DOMAIN].pop(f"{entry.entry_id}_switches", None)

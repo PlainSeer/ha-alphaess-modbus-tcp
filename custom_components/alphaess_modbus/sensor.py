@@ -427,6 +427,9 @@ class AlphaESSDispatchCountdownSensor(CoordinatorEntity[AlphaESSCoordinator], Se
 
     @property
     def native_value(self) -> int | None:
+        deadline = getattr(self.coordinator, "dispatch_deadline", None)
+        if deadline is not None:
+            return max(0, int(deadline - time.monotonic()))
         started = self.coordinator.dispatch_started_at
         dur = self.coordinator.dispatch_duration_s
         if started is None or dur <= 0:
@@ -478,6 +481,9 @@ class AlphaESSModeCountdownSensor(CoordinatorEntity[AlphaESSCoordinator], Sensor
     def native_value(self) -> int | None:
         if self.coordinator.active_dispatch_key != self._switch_key:
             return None
+        deadline = getattr(self.coordinator, "dispatch_deadline", None)
+        if deadline is not None:
+            return max(0, int(deadline - time.monotonic()))
         started = self.coordinator.dispatch_started_at
         dur = self.coordinator.dispatch_duration_s
         if started is None or dur <= 0:

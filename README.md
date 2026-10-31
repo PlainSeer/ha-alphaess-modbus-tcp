@@ -106,6 +106,9 @@ Version-specific changes and acknowledgements are recorded in the [release notes
 - **Date & Time sync** - sync inverter clock to Home Assistant system time
 - **Sync Dispatch State** - clear stale dispatch controls after a direct inverter read; preserve live paused controllers and never turn dispatch switches on
 
+Development dispatch lifecycle changes, service-error behavior, reload handling and
+retry semantics are documented in [Dispatch lifecycle](docs/dispatch-lifecycle.md).
+
 ---
 
 ## Requirements

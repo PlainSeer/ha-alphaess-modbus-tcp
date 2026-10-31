@@ -68,7 +68,7 @@ class AlphaESSPeakShavingSwitch(AlphaESSSwitch):
 
     @property
     def extra_state_attributes(self):
-        return {"paused": self.paused, "reason": self.reason,
+        return {**super().extra_state_attributes, "paused": self.paused, "reason": self.reason,
                 "requested_battery_power_w": self._command[0] if self._command else None}
 
     @property
@@ -91,7 +91,7 @@ class AlphaESSPeakShavingSwitch(AlphaESSSwitch):
         if self._worker is None or self._worker.done():
             self._worker = self.hass.async_create_task(self._update(), name="alphaess_peak_shaving")
 
-    async def async_turn_on(self, **kwargs):
+    async def _turn_on(self, **kwargs):
         async with self._lock:
             if self._is_on:
                 return
@@ -110,6 +110,11 @@ class AlphaESSPeakShavingSwitch(AlphaESSSwitch):
             stamp = finite(self._coordinator._last_polled.get("dispatch_start"))
             if dispatch != 0 or stamp is None or not 0 <= time.monotonic() - stamp <= 30:
                 raise HomeAssistantError("Reset the existing inverter dispatch or wait for a fresh inactive dispatch reading before enabling Peak Shaving")
+            if getattr(self._coordinator, "_unloading", False):
+                raise HomeAssistantError("Integration is unloading")
+            self._control_generation += 1
+            self._suspended = False
+            self._acknowledged = self._uncertain = self._requested = None
             self._is_on = True
             self._coordinator.active_dispatch_key = self.switch_key
             self._command = None
@@ -132,14 +137,13 @@ class AlphaESSPeakShavingSwitch(AlphaESSSwitch):
 
     async def _stop(self, *, reset):
         # Disable first: queued updates must recheck after acquiring the lock.
-        was_on = self._is_on
         self._is_on = False
         self._stop_callbacks()
         async with self._lock:
             try:
                 if self._owns_dispatch():
                     try:
-                        if reset and was_on and self._command is not None:
+                        if reset and self._command is not None:
                             await self._coordinator.async_reset_dispatch()
                     finally:
                         self._coordinator.active_dispatch_key = None
@@ -153,6 +157,7 @@ class AlphaESSPeakShavingSwitch(AlphaESSSwitch):
         await self._stop(reset=True)
 
     def prepare_force_off(self):
+        self._control_generation += 1
         self._is_on = False
         self._stop_callbacks()
 
@@ -164,10 +169,9 @@ class AlphaESSPeakShavingSwitch(AlphaESSSwitch):
         return
 
     async def async_will_remove_from_hass(self):
-        try:
-            await self._stop(reset=True)
-        except Exception:
-            _LOGGER.exception("Could not reset Peak Shaving on unload; dispatch lease will expire")
+        # A renewable lease expires naturally; unloading must not reset a
+        # command that another controller may already have replaced.
+        await self._stop(reset=False)
         if self._worker and not self._worker.done():
             await self._worker
         await super().async_will_remove_from_hass()
@@ -208,13 +212,13 @@ class AlphaESSPeakShavingSwitch(AlphaESSSwitch):
         self.paused = True
         self.reason = reason
         if self._command is not None:
-            await self._coordinator.async_reset_dispatch()
+            await self._pause_dispatch()
             self._command = None
             self._last_write = now
 
     async def _update(self):
         async with self._lock:
-            if not self._is_on or not self._owns_dispatch():
+            if not self._is_on or not self._owns_dispatch() or self._suspended:
                 return
             try:
                 await self._evaluate(time.monotonic())
@@ -225,10 +229,6 @@ class AlphaESSPeakShavingSwitch(AlphaESSSwitch):
                 self._stop_callbacks()
                 self.reason = "write_failed"
                 self.paused = False
-                try:
-                    await self._coordinator.async_reset_dispatch()
-                except Exception:
-                    _LOGGER.exception("Peak Shaving reset failed; dispatch lease will expire")
                 self._coordinator.active_dispatch_key = None
                 self._command = None
                 _LOGGER.exception("Peak Shaving stopped after command failure")
@@ -272,7 +272,7 @@ class AlphaESSPeakShavingSwitch(AlphaESSSwitch):
         changed = (self._command is None or abs(requested - self._command[0]) >= DEADBAND_W
                    or cutoff != self._command[1])
         if elapsed >= MIN_WRITE_SECONDS and (changed or elapsed >= RENEW_SECONDS):
-            await self._coordinator.async_write_dispatch([
+            await self._write_dispatch([
                 1, 0, 32000 + requested, 0, 32000, DISPATCH_MODE_SOC_CONTROL,
                 cutoff, 0, LEASE_SECONDS, DISPATCH_FLOW_DIRECTION, DISPATCH_PV_UNCHANGED,
             ])

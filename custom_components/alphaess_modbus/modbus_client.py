@@ -10,6 +10,8 @@ from typing import Any, Awaitable, Callable
 from pymodbus.client import AsyncModbusTcpClient
 from pymodbus.exceptions import ModbusException
 
+from .dispatch import WriteNotSent, WriteRejected, WriteIndeterminate, DispatchConflict, command_matches
+
 _LOGGER = logging.getLogger(__name__)
 
 # pymodbus renamed the slave keyword: 'slave' in <3.8, 'device_id' in >=3.8
@@ -26,6 +28,32 @@ _CONNECT_RETRY_DELAY = 1.0  # seconds between retries
 _COMM_ERRORS = (ModbusException, asyncio.TimeoutError, OSError)
 
 
+def _retry_owner(client):
+    # 3.16 async: ctx; earlier 3.x: transaction; 3.7 async: client.
+    for owner in (getattr(client, "ctx", None), getattr(client, "transaction", None), client):
+        if owner is not None and hasattr(owner, "retries"):
+            return owner
+    return None
+
+
+async def _finish_request(awaitable):
+    """Keep the shared transaction alive even if its service caller is cancelled."""
+    task = asyncio.ensure_future(awaitable)
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+        except Exception:
+            break
+    if cancelled:
+        if not task.cancelled():
+            task.exception()  # consume an error before propagating caller cancellation
+        raise asyncio.CancelledError
+    return task.result()
+
+
 class AlphaESSModbusClient:
     def __init__(self, host: str, port: int, slave_id: int) -> None:
         self._host = host
@@ -36,6 +64,7 @@ class AlphaESSModbusClient:
         self._connect_lock = asyncio.Lock()
         self._consecutive_failures: int = 0
         self._skip_until: float = 0.0
+        self._closing = False
 
     @property
     def connected(self) -> bool:
@@ -51,27 +80,26 @@ class AlphaESSModbusClient:
         _connect_lock so concurrent callers coalesce into one attempt.
         """
         async with self._connect_lock:
+            if self._closing:
+                raise ModbusException("Client is unloading")
             # Never leak a prior client (and its socket); tear it down first.
             self._teardown_client()
             client = AsyncModbusTcpClient(
                 self._host, port=self._port, timeout=5, reconnect_delay=0
             )
-            for attempt in range(_CONNECT_RETRIES):
-                await client.connect()
-                if client.connected:
-                    self._client = client
-                    return
-                if attempt < _CONNECT_RETRIES - 1:
-                    _LOGGER.debug(
-                        "Connect attempt %d/%d failed, retrying in %.0fs",
-                        attempt + 1, _CONNECT_RETRIES, _CONNECT_RETRY_DELAY,
-                    )
-                    await asyncio.sleep(_CONNECT_RETRY_DELAY)
-            # All attempts failed — don't keep a dead client object around.
             try:
-                client.close()
-            except Exception:  # noqa: BLE001 — close must never raise on the failure path
-                pass
+                for attempt in range(_CONNECT_RETRIES):
+                    await client.connect()
+                    if client.connected:
+                        self._client = client
+                        return
+                    if attempt < _CONNECT_RETRIES - 1:
+                        _LOGGER.debug("Connect attempt %d/%d failed, retrying", attempt + 1, _CONNECT_RETRIES)
+                        await asyncio.sleep(_CONNECT_RETRY_DELAY)
+            finally:
+                if self._client is not client:
+                    # Also cover exceptions/cancellation during initial setup.
+                    client.close()
 
     def _teardown_client(self) -> None:
         """Close and forget the current client (synchronous; pymodbus close() is sync)."""
@@ -83,9 +111,16 @@ class AlphaESSModbusClient:
             self._client = None
 
     async def close(self) -> None:
-        self._teardown_client()
+        # Gate queued/new operations, then drain the operation holding the lock.
+        # This includes writes made directly by service handlers, not just servos.
+        self._closing = True
+        async with self._lock:
+            async with self._connect_lock:
+                self._teardown_client()
 
     async def _ensure_connected(self) -> None:
+        if self._closing:
+            raise ModbusException("Client is unloading")
         if not self.connected:
             # Backoff: after 3 consecutive failures hold off reconnects for 10 s so
             # one disconnected cycle doesn't fire dozens of blocking retry loops.
@@ -115,11 +150,19 @@ class AlphaESSModbusClient:
         protocol error on a healthy link and leaves the connection intact.
         """
         try:
-            result = await call()
+            result = await _finish_request(call())
+        except asyncio.CancelledError:
+            self._teardown_client()
+            raise
         except _COMM_ERRORS as err:
             self._teardown_client()
             raise ModbusException(f"Comm error {what}: {err}") from err
+        if result is None:
+            self._teardown_client()
+            raise ModbusException(f"No response {what}")
         if result.isError():
+            if not getattr(result, "exception_code", None):
+                self._teardown_client()  # includes 3.7's synthesized no-reply response
             raise ModbusException(f"Error {what}: {result}")
         return result
 
@@ -183,7 +226,7 @@ class AlphaESSModbusClient:
         return value
 
     async def write_registers(
-        self, address: int, values: list[int], *, guard: Callable[[], bool] | None = None
+        self, address: int, values: list[int], *, guard: Callable[[], bool] | None = None,
     ) -> bool:
         async with self._lock:
             if guard is not None and not guard():
@@ -199,6 +242,81 @@ class AlphaESSModbusClient:
                 f"writing {address:#06x}",
             )
             return True
+
+    async def write_dispatch(self, address, *, guard, prepare, expected, attempted, acknowledged, confirmed=None):
+        """One dispatch transmission; all checks run under the shared lock.
+
+        Per-write retries are not a pymodbus API. Temporarily disable transport
+        retries under our lock, restoring the sensor/read policy in finally.
+        The retry owner is version-dependent (client, transaction or ctx).
+        """
+        async with self._lock:
+            if not guard():
+                return False
+            try:
+                await self._ensure_connected()
+            except Exception as err:
+                raise WriteNotSent(str(err)) from err
+            if not guard():
+                return False
+            retry_owner = _retry_owner(self._client)
+            if retry_owner is None:
+                raise WriteNotSent("Unsupported pymodbus dispatch retry policy; no command sent")
+            try:
+                previous_retries = retry_owner.retries
+                retry_owner.retries = 0
+            except Exception as err:
+                raise WriteNotSent(f"Cannot select dispatch retry policy: {err}") from err
+            try:
+                candidates = expected()
+                if candidates:
+                    try:
+                        result = await self._request(
+                            lambda: self._client.read_holding_registers(
+                                address, count=11, **{_SLAVE_KWARG: self._slave_id}),
+                            "checking dispatch before write",
+                        )
+                        observed = list(result.registers)
+                        if len(observed) != 11:
+                            raise ValueError("Incomplete dispatch read-back")
+                    except Exception as err:
+                        raise WriteNotSent(f"Dispatch read-back failed: {err}") from err
+                    if observed[0] == 0 and (planned := prepare()) is not None and planned[0] == 0:
+                        acknowledged(observed)
+                        return True
+                    match = next((cmd for cmd in candidates if command_matches(observed, cmd)), None)
+                    if match is None:
+                        raise DispatchConflict("Dispatch read-back differs from acknowledged and uncertain commands")
+                    if confirmed is not None:
+                        confirmed(match)
+                # Read-back and reconnect may have taken time. Prepare last.
+                if not guard() or (values := prepare()) is None:
+                    return False
+                attempted(values)
+                try:
+                    result = await _finish_request(self._client.write_registers(
+                        address, values, **{_SLAVE_KWARG: self._slave_id}))
+                except asyncio.CancelledError:
+                    self._teardown_client()
+                    raise
+                except Exception as err:
+                    self._teardown_client()
+                    raise WriteIndeterminate(f"Dispatch acknowledgement failed: {err}") from err
+                if result is None:
+                    self._teardown_client()
+                    raise WriteIndeterminate("Missing dispatch acknowledgement")
+                if result.isError():
+                    # A transport timeout can be a synthesized ExceptionResponse.
+                    # Processing/device/gateway errors do not prove non-application.
+                    code = getattr(result, "exception_code", None)
+                    if code not in (1, 2, 3, 6):
+                        self._teardown_client()
+                        raise WriteIndeterminate(f"No authoritative dispatch acknowledgement: {result}")
+                    raise WriteRejected(f"Inverter rejected dispatch (exception {code})")
+                acknowledged(values)
+                return True
+            finally:
+                retry_owner.retries = previous_retries
 
     async def write_register(self, address: int, value: int) -> None:
         async with self._lock:

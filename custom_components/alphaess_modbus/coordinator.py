@@ -108,6 +108,7 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             update_interval=timedelta(seconds=loop_interval),
         )
         self._model_variant: str = options.get("model_variant", "standard")
+        self._entry_id = config_entry.entry_id
         self.client = client
         self._last_polled: dict[str, float] = {}
         # Caches for number/select entity values — populated by those entities
@@ -119,7 +120,9 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.fi_paused: bool = False
         self.dispatch_started_at: datetime | None = None
         self.dispatch_duration_s: int = 0
+        self.dispatch_deadline: float | None = None
         self.active_dispatch_key: str | None = None
+        self._unloading = False
 
     def apply_poll_options(self, options) -> None:
         mode = options.get("poll_mode", "normal")
@@ -224,21 +227,34 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_write_dispatch(
         self, values: list[int], *, reset_timer: bool = True,
         guard: Callable[[], bool] | None = None,
-    ) -> None:
+        prepare: Callable[[], list[int] | None] | None = None,
+        expected=None, attempted=None, acknowledged=None, confirmed=None,
+    ) -> bool:
         from .const import DISPATCH_START_ADDR
-        if guard is None:
-            await self.client.write_registers(DISPATCH_START_ADDR, values)
-        elif not await self.client.write_registers(DISPATCH_START_ADDR, values, guard=guard):
-            return
+        if getattr(self, "_unloading", False):
+            raise RuntimeError("Integration is unloading")
+        valid = lambda: not getattr(self, "_unloading", False) and (guard is None or guard())
+        accepted = await self.client.write_dispatch(
+            DISPATCH_START_ADDR, guard=valid, prepare=prepare or (lambda: list(values)),
+            expected=expected or (lambda: []), attempted=attempted or (lambda command: None),
+            acknowledged=acknowledged or (lambda command: None), confirmed=confirmed,
+        )
+        if not accepted:
+            return False
+        if not valid():
+            return True  # acknowledged, but bookkeeping belongs to a newer session
         if values and values[0] == 1 and len(values) >= 9:
             if reset_timer:
                 self.dispatch_started_at = datetime.now(timezone.utc)
-                self.dispatch_duration_s = int(values[8])
+                self.dispatch_duration_s = (int(values[7]) << 16) | int(values[8])
+                self.dispatch_deadline = time.monotonic() + self.dispatch_duration_s
         else:
             self.dispatch_started_at = None
             self.dispatch_duration_s = 0
+            self.dispatch_deadline = None
+        return True
 
-    async def async_reset_dispatch(self) -> None:
+    async def async_reset_dispatch(self, *, guard=None, **kwargs) -> None:
         await self.async_write_dispatch([
             0,      # Dispatch Start: stop
             0, 32000,  # Active Power (32000 offset, hi+lo word)
@@ -248,14 +264,23 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             0, 90,  # Dispatch Time (90 seconds)
             DISPATCH_FLOW_DIRECTION,  # Flow Direction (0x0889)
             DISPATCH_PV_UNCHANGED,    # PV Switch (0x088A): leave unchanged on stop
-        ])
+        ], guard=guard, **kwargs)
 
     async def async_write_register(self, address: int, value: int) -> None:
         await self.client.write_register(address, value)
 
     async def async_write_raw(self, address: int, value: int) -> None:
         _LOGGER.debug("write_raw: address=%#06x value=%d", address, value)
-        await self.client.write_register(address, value)
+        from .switch import _control_lock, _MUTEX_SWITCHES
+        async with _control_lock(self):
+            if 0x0880 <= address <= 0x088A:
+                switches = self.hass.data[DOMAIN].get(f"{self._entry_id}_switches", {})
+                controls = [sw for key, sw in switches.items() if key in _MUTEX_SWITCHES]
+                for sw in controls:
+                    sw.prepare_force_off()
+                for sw in controls:
+                    await sw.async_force_off()
+            await self.client.write_register(address, value)
 
     async def async_write_registers(self, address: int, values: list[int]) -> None:
         await self.client.write_registers(address, values)

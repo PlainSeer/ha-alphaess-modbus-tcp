@@ -29,7 +29,7 @@ class Simulation:
         self.entry = SimpleNamespace(entry_id='test')
         self.sw = AlphaESSPeakShavingSwitch(self.c, self.entry)
         self.switches = {self.sw.switch_key: self.sw}
-        self.hass = SimpleNamespace(data={DOMAIN: {'test_switches': self.switches}},
+        self.hass = SimpleNamespace(loop=asyncio.get_running_loop(), data={DOMAIN: {'test_switches': self.switches}},
                                     async_create_task=lambda coro, **kw: asyncio.create_task(coro))
         self.sw.hass = self.hass
         self.sw.async_write_ha_state = Mock()
@@ -78,19 +78,32 @@ class DispatchSimulation(Simulation):
         self.client._ensure_connected = AsyncMock()
         self.writes = []
         self.state = 0
+        self.single_writes = []
+        self.c.hass = self.hass
+        self.c._entry_id = self.entry.entry_id
 
         async def write(address, values, **kwargs):
             self.writes.append((address, list(values)))
             self.state = values[0]
+            self.registers = list(values)
             return SimpleNamespace(isError=lambda: False)
 
-        self.client._client = SimpleNamespace(write_registers=AsyncMock(side_effect=write))
+        self.registers = [0] * 11
+        async def read(*args, **kwargs):
+            return SimpleNamespace(isError=lambda: False, registers=list(self.registers))
+        async def write_single(address, value, **kwargs):
+            self.single_writes.append((address, value))
+            if 0x0880 <= address <= 0x088A:
+                self.registers[address - 0x0880] = value
+            return SimpleNamespace(isError=lambda: False)
+        self.client._client = SimpleNamespace(retries=3, connected=True, close=Mock(),
+            write_registers=AsyncMock(side_effect=write), write_register=AsyncMock(side_effect=write_single), read_holding_registers=AsyncMock(side_effect=read))
         self.client.read_register = AsyncMock(side_effect=lambda *args: self.state)
         self.c.client = self.client
         self.c.dispatch_started_at = None
         self.c.dispatch_duration_s = 0
         self.c.async_write_dispatch = lambda *a, **kw: AlphaESSCoordinator.async_write_dispatch(self.c, *a, **kw)
-        self.c.async_reset_dispatch = lambda: AlphaESSCoordinator.async_reset_dispatch(self.c)
+        self.c.async_reset_dispatch = lambda **kw: AlphaESSCoordinator.async_reset_dispatch(self.c, **kw)
 
     def button(self, key):
         button = AlphaESSButton(self.c, self.entry, {'key': key, 'name': key, 'icon': 'mdi:sync'})

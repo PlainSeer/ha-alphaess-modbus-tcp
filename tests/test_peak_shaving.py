@@ -207,7 +207,7 @@ def test_existing_modes_stop_peak_before_starting(key, starter):
     asyncio.run(run())
 
 
-def test_write_failure_stops_session_and_attempts_single_reset():
+def test_write_failure_stops_session_without_automatic_reset():
     async def run():
         s = Simulation()
         s.c.async_write_dispatch.side_effect = OSError('connection lost')
@@ -217,7 +217,7 @@ def test_write_failure_stops_session_and_attempts_single_reset():
         assert s.sw._heartbeat_cancel is None
         await s.step(seconds=600)
         s.c.async_write_dispatch.assert_awaited_once()
-        s.c.async_reset_dispatch.assert_awaited_once()
+        s.c.async_reset_dispatch.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -226,11 +226,11 @@ def test_stop_waits_for_inflight_write_and_no_stale_commands_follow():
         s = Simulation()
         entered, release = asyncio.Event(), asyncio.Event()
         order = []
-        async def delayed(values):
+        async def delayed(values, **kwargs):
             entered.set()
             await release.wait()
             order.append('write')
-        async def reset():
+        async def reset(**kwargs):
             order.append('reset')
         s.c.async_write_dispatch.side_effect = delayed
         s.c.async_reset_dispatch.side_effect = reset
@@ -330,11 +330,11 @@ def test_other_mode_waits_when_peak_is_already_stopping():
         s = Simulation()
         entered, release = asyncio.Event(), asyncio.Event()
         order = []
-        async def delayed(values):
+        async def delayed(values, **kwargs):
             entered.set()
             await release.wait()
             order.append('peak_write')
-        async def reset():
+        async def reset(**kwargs):
             order.append('reset')
         s.c.async_write_dispatch.side_effect = delayed
         s.c.async_reset_dispatch.side_effect = reset
@@ -377,7 +377,7 @@ def test_coalesces_callbacks_while_command_is_in_flight():
         s = Simulation()
         await s.start()
         entered, release = asyncio.Event(), asyncio.Event()
-        async def delayed(values):
+        async def delayed(values, **kwargs):
             entered.set()
             await release.wait()
         s.c.async_write_dispatch.side_effect = delayed
@@ -419,13 +419,13 @@ def test_failed_poll_immediately_resets_active_dispatch():
     asyncio.run(run())
 
 
-def test_active_unload_drains_and_resets_once():
+def test_active_unload_drains_without_reset():
     async def run():
         s = Simulation()
         await s.start()
         await s.sw.async_will_remove_from_hass()
         assert not s.sw.is_on and not s.listeners
-        s.c.async_reset_dispatch.assert_awaited_once()
+        s.c.async_reset_dispatch.assert_not_awaited()
         await s.step()
         assert s.c.async_write_dispatch.call_count == 1
     asyncio.run(run())
@@ -537,9 +537,16 @@ def test_existing_mode_commands_identical_with_peak_off_or_absent(key):
         for call in s.c.async_write_dispatch.call_args_list:
             kwargs = dict(call.kwargs)
             assert kwargs.pop("guard")()
+            for name in ("prepare", "expected", "attempted", "acknowledged", "confirmed"):
+                kwargs.pop(name)
             commands.append((call.args, kwargs))
         await other.async_turn_off()
-        return commands, list(s.c.async_reset_dispatch.call_args_list)
+        resets = []
+        for call in s.c.async_reset_dispatch.call_args_list:
+            assert call.kwargs["guard"]()
+            assert call.kwargs["expected"] is None
+            resets.append("explicit reset")
+        return commands, resets
     async def run():
         assert await capture(True) == await capture(False)
     asyncio.run(run())

@@ -116,10 +116,19 @@ class AlphaESSButton(ButtonEntity):
             await sw.async_force_off()
 
     async def _reset_dispatch(self) -> None:
+        from .switch import _control_lock
+        async with _control_lock(self._coordinator):
+            await self._reset_dispatch_locked()
+
+    async def _reset_dispatch_locked(self) -> None:
         try:
             await self._clear_dispatch_controls()
             await self._coordinator.async_reset_dispatch()
             await self._verify_dispatch_stopped()
+            switches = self.hass.data[DOMAIN].get(f"{self._entry_id}_switches", {})
+            for sw in switches.values():
+                if not sw.is_on:
+                    sw.confirm_stopped()
             persistent_notification.async_dismiss(
                 self.hass, f"alphaess_dispatch_reset_{self._entry_id}"
             )
@@ -158,7 +167,7 @@ class AlphaESSButton(ButtonEntity):
         switches = self.hass.data[DOMAIN].get(f"{self._entry_id}_switches", {})
         key = self._coordinator.active_dispatch_key
         sw = switches.get(key)
-        if sw is None or not sw.is_on:
+        if sw is None or not sw.is_on or sw._suspended:
             return None
         if key == "excess_export":
             live = sw._ee_listener_unsub is not None
@@ -181,6 +190,11 @@ class AlphaESSButton(ButtonEntity):
         return controller if waiting else None
 
     async def _sync_dispatch_state(self) -> None:
+        from .switch import _control_lock
+        async with _control_lock(self._coordinator):
+            await self._sync_dispatch_state_locked()
+
+    async def _sync_dispatch_state_locked(self) -> None:
         waiting_before_read = self._waiting_controller()
         try:
             dispatch_state = await self._read_dispatch_state()
@@ -199,4 +213,8 @@ class AlphaESSButton(ButtonEntity):
                 retained = waiting_before_read
         preserve = {retained[0]} if retained is not None else set()
         await self._clear_dispatch_controls(preserve=preserve)
+        switches = self.hass.data[DOMAIN].get(f"{self._entry_id}_switches", {})
+        for key, sw in switches.items():
+            if key not in preserve and not sw.is_on:
+                sw.confirm_stopped()
         _LOGGER.debug("sync_dispatch_state: cleared stopped controls; preserved paused/resuming controllers: %s", preserve)

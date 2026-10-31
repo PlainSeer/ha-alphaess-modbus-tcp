@@ -127,6 +127,7 @@ def test_post_lock_guard_blocks_slider_write_waiting_behind_reset():
         s = DispatchSimulation()
         sw = s.other('force_export')
         sw._is_on = True
+        s.c.active_dispatch_key = sw.switch_key
         await s.client._lock.acquire()
         task = asyncio.create_task(sw._write_export_dispatch(35000, 7200, reset_timer=False))
         await asyncio.sleep(0)  # task now waits inside the real client lock
@@ -142,6 +143,7 @@ def test_guard_rechecked_after_reconnect_await():
         s = DispatchSimulation()
         sw = s.other('force_export')
         sw._is_on = True
+        s.c.active_dispatch_key = sw.switch_key
         entered, release = asyncio.Event(), asyncio.Event()
 
         async def connect():
@@ -181,6 +183,7 @@ def test_queued_duration_stop_cannot_reset_a_later_external_dispatch():
         s = DispatchSimulation()
         sw = s.other('force_export')
         sw._is_on = True
+        s.c.active_dispatch_key = sw.switch_key
         task = sw._create_control_task(sw._async_turn_off_silent(), name='expired-duration')
         sw._pending_tasks.add(task)
         await s.button('dispatch_reset').async_press()
