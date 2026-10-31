@@ -13,6 +13,7 @@ from .config_flow import CONF_SLAVE_ID
 from .const import DOMAIN, PLATFORMS
 from .coordinator import AlphaESSCoordinator
 from .modbus_client import AlphaESSModbusClient
+from .dashboard_options import CONF_MANAGE_DASHBOARD
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -48,9 +49,12 @@ def _detect_model(raw_sn: str) -> str:
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Register optional frontend assets without changing integration entries."""
-    from .dashboard import async_setup_dashboard
-
-    await async_setup_dashboard(hass)
+    try:
+        from .dashboard import async_setup_dashboard
+        await async_setup_dashboard(hass)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Could not load optional AlphaESS frontend")
     try:
         from .dashboard_install import async_watch_dashboard
         async_watch_dashboard(hass)
@@ -78,6 +82,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(f"Cannot connect to {host}:{port}")
 
     coordinator = AlphaESSCoordinator(hass, entry, client)
+    coordinator._entry_options = dict(getattr(entry, "options", {}))
     try:
         await coordinator.async_config_entry_first_refresh()
     except BaseException:
@@ -132,9 +137,24 @@ async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None
     coordinator = hass.data[DOMAIN][entry.entry_id]
     if entry.options.get("model_variant", "standard") != coordinator._model_variant:
         await hass.config_entries.async_reload(entry.entry_id)
-    else:
+        return
+    previous = getattr(coordinator, "_entry_options", None)
+    current = dict(entry.options)
+    defaults = {"poll_mode": "normal", "slow_multiplier": 3.0, "fast_multiplier": 0.5}
+    if previous is None or any(previous.get(key, default) != current.get(key, default)
+                               for key, default in defaults.items()):
         coordinator.apply_poll_options(entry.options)
         await coordinator.async_request_refresh()
+    coordinator._entry_options = current
+    if previous is not None and previous.get(CONF_MANAGE_DASHBOARD, True) != current.get(CONF_MANAGE_DASHBOARD, True):
+        try:
+            from .dashboard_install import async_install_dashboard
+            # Shares the save lock with setup and registry updates. Disabling
+            # waits for an already-started save, without touching the coordinator.
+            await async_install_dashboard(hass)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Could not update optional AlphaESS dashboard preference")
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:

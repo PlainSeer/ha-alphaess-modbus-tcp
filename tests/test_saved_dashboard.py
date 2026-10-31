@@ -222,7 +222,7 @@ def test_previous_backup_failure_preserves_owned_edited_default():
               "alphaess_modbus.saved_dashboard_previous": previous}
     async def run():
         with patch.object(install, "dashboard_from_registry", return_value=generated()), patch.object(
-            install, "Store", side_effect=lambda hass, version, key: stores[key]
+            install, "Store", side_effect=lambda hass, version, key, **kwargs: stores[key]
         ):
             try:
                 await install.async_install_dashboard(h)

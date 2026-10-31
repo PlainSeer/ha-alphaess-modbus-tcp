@@ -47,6 +47,8 @@ Images use the production flow card and representative native panels with exampl
 
 After integration setup, an **AlphaESS** dashboard is created automatically. The default dashboard follows integration updates, including new sensors and layout changes. Manual edits to this default are replaced after backup; use a separate dashboard copy for permanent customisations. YAML and unrelated dashboards are preserved. [Setup, migration and rollback](docs/saved-dashboard.md).
 
+Development adds **Manage AlphaESS dashboard automatically** in the integration options (enabled by default). Switch it off to keep the existing dashboard without automatic creation or layout updates. All inverters share this preference: one opted-out entry pauses management of the shared dashboard. Changing it does not reload inverter control or change PredBat settings or register writes. See [automatic management and save recovery](docs/saved-dashboard.md#automatic-management-development).
+
 ## About this project
 
 Maintained by [PlainSeer](https://github.com/PlainSeer).

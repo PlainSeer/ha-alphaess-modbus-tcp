@@ -79,6 +79,38 @@ storage dashboard with a different URL. The copy is user-managed and is never
 refreshed by this integration. Keep custom copies updated manually when changing
 entity IDs. The default sidebar metadata, permissions and view routes are retained.
 
+## Automatic management (development)
+
+**Manage AlphaESS dashboard automatically** is enabled by default in the
+integration's options. Turning it off stops automatic creation and layout
+updates, including after restart. It leaves the existing dashboard, sidebar
+metadata, custom copies and frontend resources in place. The dashboard remains
+usable and its sensor readings continue to update normally. This setting applies
+in place: it does not reload the inverter integration, refresh polling, change
+PredBat settings, call control services or write inverter registers.
+
+All inverters share one saved dashboard. If any configured AlphaESS entry opts
+out, automatic management pauses for the whole shared dashboard. Re-enable the
+setting on every entry to resume. While management is off, manual changes to
+the default are preserved; re-enabling restores the normal managed-layout policy
+and backs up changes before replacement. A separate dashboard copy remains
+user-managed regardless of this option.
+
+Only AlphaESS entity/device registry events schedule a debounced refresh.
+Renames, removals and visibility changes remain supported; unrelated registry
+edits do not wake the dashboard updater. This does not alter live state updates.
+Setup, preference changes and background refreshes use the same save lock.
+
+A pending-save record is persisted before replacing the layout. If a layout or
+ownership-completion save fails, the next setup or relevant refresh retries it,
+even when HA's in-memory cache already shows the attempted layout. The last
+working layout backup is retained. A failed initial layout can also be completed
+on a later setup. If initial ownership recording fails before content is saved,
+only the just-created blank registration is rolled back; a user edit made in the
+meantime is preserved. Errors are logged; there is no repeated automatic retry
+loop. Recovery never adopts a dashboard with a different recorded identity or a
+YAML dashboard.
+
 ## Loading
 
 The old strategy loader remains packaged for separately created legacy strategy
@@ -107,3 +139,4 @@ edits, protection of unrelated/YAML/custom-copy dashboards, entity
 coverage and multiple inverters, passive flow interactions and signed readings.
 Browser checks cover Chromium and WebKit at phone/tablet/desktop widths. A real
 iPhone Companion App cold-start check is still required after installation.
+

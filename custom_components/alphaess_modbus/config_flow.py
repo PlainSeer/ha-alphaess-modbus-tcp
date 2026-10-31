@@ -13,6 +13,7 @@ except ImportError:
 
 from .const import DEFAULT_PORT, DEFAULT_SLAVE, DOMAIN
 from .modbus_client import AlphaESSModbusClient
+from .dashboard_options import CONF_MANAGE_DASHBOARD
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,6 +88,7 @@ class AlphaESSOptionsFlowHandler(config_entries.OptionsFlow):
         model_variant = options.get("model_variant", "standard")
 
         schema = vol.Schema({
+            vol.Required(CONF_MANAGE_DASHBOARD, default=options.get(CONF_MANAGE_DASHBOARD, True)): selector.BooleanSelector(),
             vol.Required("poll_mode", default=poll_mode): selector.SelectSelector(
                 selector.SelectSelectorConfig(
                     options=[
