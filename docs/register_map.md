@@ -341,9 +341,9 @@ The six dispatch switches (Force Charging, Force Discharging, Force Export, Forc
 
 | Key | Name | Description |
 |-----|------|-------------|
-| `dispatch_reset` | Dispatch Reset | Writes the dispatch stop command; returns the inverter to its configured scheduled operating mode |
+| `dispatch_reset` | Dispatch Reset | Stops local dispatch controllers, writes the existing stop command once, and verifies 0x0880; raises on unresolved failure |
 | `synchronise_date_time` | Synchronise Date & Time | Sets the inverter real-time clock to match the current Home Assistant system time |
-| `sync_dispatch_state` | Sync Dispatch State | Reads live dispatch registers and corrects HA switch states to match; useful after a HA restart if a dispatch was active when HA stopped |
+| `sync_dispatch_state` | Sync Dispatch State | Reads 0x0880 directly and clears stopped dispatch controls only; preserves PV and Hold preferences and never claims an external dispatch |
 | `restart_pcs` | Restart PCS | Restarts the Power Conversion System by writing code 7 to the reset register; use with caution |
 | `restart_ems` | Restart EMS | Restarts the Energy Management System by writing code 8 to the reset register; use with caution |
 | `reset_energy_totals` | Reset Energy Totals | Clears all lifetime energy counters by writing code 1 to the reset register; this is irreversible |

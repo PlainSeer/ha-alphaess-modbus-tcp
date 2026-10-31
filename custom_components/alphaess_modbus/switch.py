@@ -127,6 +127,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         self._attr_icon = definition["icon"]
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, entry.entry_id)})
         self._is_on = False
+        self._control_generation = 0
         self._timer_cancel: asyncio.TimerHandle | None = None
         self._duration_cancel: asyncio.TimerHandle | None = None
         self._soc_unsub: Any | None = None
@@ -291,6 +292,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
 
     async def _async_turn_off_silent(self) -> None:
         self._is_on = False
+        self._control_generation += 1
         if self._coordinator.active_dispatch_key == self.switch_key:
             self._coordinator.active_dispatch_key = None
         self._cancel_timer()
@@ -332,12 +334,14 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         self._bp_near_zero_since = None
 
     def _schedule_duration_off(self, duration_seconds: int) -> None:
+        if not self._is_on:
+            return
         if self._duration_cancel:
             self._duration_cancel.cancel()
         loop = self.hass.loop
 
         def _callback():
-            task = self.hass.async_create_task(
+            task = self._create_control_task(
                 self._async_turn_off_silent(),
                 name=f"alphaess_{self.switch_key}_duration_off",
             )
@@ -347,6 +351,8 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         self._duration_cancel = loop.call_later(duration_seconds, _callback)
 
     def _schedule_auto_off(self, duration_seconds: int) -> None:
+        if not self._is_on:
+            return
         self._cancel_timer()
         loop = self.hass.loop
 
@@ -354,7 +360,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             await self._async_turn_off_silent()
 
         def _callback():
-            task = self.hass.async_create_task(_turn_off(), name=f"alphaess_{self.switch_key}_auto_off")
+            task = self._create_control_task(_turn_off(), name=f"alphaess_{self.switch_key}_auto_off")
             self._pending_tasks.add(task)
             task.add_done_callback(self._pending_tasks.discard)
 
@@ -395,17 +401,51 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                 pass
         return DISPATCH_MODE_SOC_CONTROL
 
-    async def async_force_off(self) -> None:
-        """Unconditionally mark this switch off and cancel its timers.
+    def _create_control_task(self, coro, *, name):
+        generation = self._control_generation
 
-        Used by other switches/buttons that need to clear state without
-        triggering a full dispatch reset (which is the caller's responsibility).
-        """
+        async def run():
+            if generation != self._control_generation:
+                coro.close()
+                return
+            await coro
+
+        task = self.hass.async_create_task(run(), name=name)
+        # Unload may cancel the outer task before run() ever starts.
+        task.add_done_callback(lambda _: coro.close())
+        return task
+
+    async def _write_dispatch(self, values: list[int], *, reset_timer: bool = True) -> None:
+        # Captured before waiting for the shared client lock; a stopped session
+        # must not write even if a new session has since started on this switch.
+        generation = self._control_generation
+        await self._coordinator.async_write_dispatch(
+            values, reset_timer=reset_timer,
+            guard=lambda: self._is_on and self._control_generation == generation,
+        )
+
+    def prepare_force_off(self) -> None:
+        """Stop callbacks synchronously before any controller is drained."""
         self._is_on = False
+        self._control_generation += 1
         if self._coordinator.active_dispatch_key == self.switch_key:
             self._coordinator.active_dispatch_key = None
         self._cancel_timer()
+        if self.switch_key == "excess_export":
+            self._coordinator.ee_paused = False
+        elif self.switch_key == "force_import":
+            self._coordinator.fi_paused = False
         self.async_write_ha_state()
+
+    async def async_force_off(self) -> None:
+        """Clear local state and drain old tasks without issuing a reset."""
+        self.prepare_force_off()
+        # Let any Modbus operation already in progress finish. This also drains
+        # created-but-not-yet-started servo and auto-off tasks before reset.
+        pending = self._pending_tasks - {asyncio.current_task()}
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+        self._cancel_timer()
 
     async def async_force_on(self) -> None:
         """Unconditionally mark this switch on without starting any dispatch."""
@@ -419,6 +459,8 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         If the Hold switch is on when the window closes, the early stop is skipped and
         the dispatch runs until the duration timer fires.
         """
+        if not self._is_on:
+            return
         if self._soc_unsub:
             self._soc_unsub()
             self._soc_unsub = None
@@ -447,7 +489,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                     self._soc_unsub = None
                     if unsub:
                         unsub()
-                    task = self.hass.async_create_task(
+                    task = self._create_control_task(
                         self._async_turn_off_silent(),
                         name=f"alphaess_{self.switch_key}_bp_off",
                     )
@@ -472,7 +514,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         soc_raw = int(cutoff_soc / DISPATCH_SOC_SCALE)
         power_raw = int(32000 - power_kw * 1000)
 
-        await self._coordinator.async_write_dispatch([
+        await self._write_dispatch([
             1,
             0, power_raw,
             0, 32000,
@@ -501,7 +543,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             return
         soc_raw = int(cutoff_soc / DISPATCH_SOC_SCALE)
         power_raw = int(32000 + power_kw * 1000)
-        await self._coordinator.async_write_dispatch([
+        await self._write_dispatch([
             1, 0, power_raw, 0, 32000, DISPATCH_MODE_SOC_CONTROL, soc_raw, 0, duration_s,
             DISPATCH_FLOW_DIRECTION, DISPATCH_PV_UNCHANGED,
         ], reset_timer=reset_timer)
@@ -527,7 +569,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
     async def _write_export_dispatch(self, word: int, duration_s: int, *, reset_timer: bool) -> None:
         cutoff_soc = self._num("force_export_cutoff_soc", 4.0)
         soc_raw = int(cutoff_soc / DISPATCH_SOC_SCALE)
-        await self._coordinator.async_write_dispatch([
+        await self._write_dispatch([
             1, 0, int(word), 0, 32000, DISPATCH_MODE_SOC_CONTROL, soc_raw, 0, duration_s,
             DISPATCH_FLOW_DIRECTION, DISPATCH_PV_UNCHANGED,
         ], reset_timer=reset_timer)
@@ -560,6 +602,8 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         use reset_timer=False so the duration countdown is preserved, and are issued
         only when the setpoint moves by _SERVO_DEADBAND_W or every _DISPATCH_STALE_REWRITE_S.
         """
+        if not self._is_on:
+            return
         if self._fe_listener_unsub is not None:
             return
 
@@ -570,7 +614,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             soc = d.get("soc_battery")
             cutoff_soc = self._num("force_export_cutoff_soc", 4.0)
             if soc is not None and float(soc) <= cutoff_soc:
-                task = self.hass.async_create_task(
+                task = self._create_control_task(
                     self._async_turn_off_silent(),
                     name=f"alphaess_{self.switch_key}_soc_off",
                 )
@@ -600,7 +644,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             )
             stale = (now - self._fe_last_write_time) >= _DISPATCH_STALE_REWRITE_S
             if changed or stale:
-                task = self.hass.async_create_task(
+                task = self._create_control_task(
                     self._write_export_dispatch(
                         word,
                         int(self._num("force_export_duration", 120.0) * 60),
@@ -635,7 +679,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         # SoC target only applies in mode 2 (State of Charge Control)
         soc_raw = int(cutoff_soc / DISPATCH_SOC_SCALE) if mode_val == DISPATCH_MODE_SOC_CONTROL else 0
 
-        await self._coordinator.async_write_dispatch([
+        await self._write_dispatch([
             1,
             0, power_raw,
             0, 32000,
@@ -667,7 +711,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                 power_raw = 32000
         else:
             power_raw = 32000
-        await self._coordinator.async_write_dispatch([
+        await self._write_dispatch([
             1, 0, power_raw, 0, 32000,
             DISPATCH_MODE_SOC_CONTROL, 255, 0, 300,
             DISPATCH_FLOW_DIRECTION, DISPATCH_PV_UNCHANGED,
@@ -685,6 +729,8 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
           normal mode for >= 10 min, and >= 15 s since last pause.
         Both transitions include a 15-second debounce to prevent flapping.
         """
+        if not self._is_on:
+            return
         if self._ee_listener_unsub is not None:
             return
 
@@ -722,7 +768,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                     self._ee_last_pause_time = now
                     self._ee_last_power_raw = None
                     self._ee_last_write_time = 0.0
-                    task = self.hass.async_create_task(
+                    task = self._create_control_task(
                         self._coordinator.async_reset_dispatch(),
                         name="alphaess_ee_auto_pause",
                     )
@@ -742,7 +788,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                         )
                         stale = (now - self._ee_last_write_time) >= 240
                         if changed or stale:
-                            task = self.hass.async_create_task(
+                            task = self._create_control_task(
                                 self._start_excess_export(),
                                 name="alphaess_ee_recalc",
                             )
@@ -766,7 +812,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                 ):
                     self._coordinator.ee_paused = False
                     self._ee_last_resume_time = now
-                    task = self.hass.async_create_task(
+                    task = self._create_control_task(
                         self._start_excess_export(),
                         name="alphaess_ee_auto_resume",
                     )
@@ -796,7 +842,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
     async def _write_import_dispatch(self, word: int, duration_s: int, *, reset_timer: bool) -> None:
         cutoff_soc = self._num("force_import_cutoff_soc", 100.0)
         soc_raw = int(cutoff_soc / DISPATCH_SOC_SCALE)
-        await self._coordinator.async_write_dispatch([
+        await self._write_dispatch([
             1, 0, int(word), 0, 32000, DISPATCH_MODE_SOC_CONTROL, soc_raw, 0, duration_s,
             DISPATCH_FLOW_DIRECTION, DISPATCH_PV_UNCHANGED,
         ], reset_timer=reset_timer)
@@ -824,6 +870,8 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         only when the setpoint moves by _SERVO_DEADBAND_W or every _DISPATCH_STALE_REWRITE_S.
         Skips rewrites while fi_paused, matching the previous refresh behaviour.
         """
+        if not self._is_on:
+            return
         if self._fi_listener_unsub is not None:
             return
 
@@ -856,7 +904,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             )
             stale = (now - self._fi_last_write_time) >= _DISPATCH_STALE_REWRITE_S
             if changed or stale:
-                task = self.hass.async_create_task(
+                task = self._create_control_task(
                     self._write_import_dispatch(
                         word,
                         int(self._num("force_import_duration", 120.0) * 60),

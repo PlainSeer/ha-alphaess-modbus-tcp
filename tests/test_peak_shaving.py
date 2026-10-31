@@ -24,6 +24,7 @@ class Simulation:
             numbers={'peak_shaving_power': 4, 'peak_shaving_cutoff_soc': 100},
             async_write_dispatch=AsyncMock(), async_reset_dispatch=AsyncMock(),
             async_write_register=AsyncMock(), ee_paused=False, fi_paused=False,
+            client=SimpleNamespace(read_register=AsyncMock(return_value=0)),
         )
         self.c.get_number = self.c.numbers.get
         self.c.get_select = lambda key: None
@@ -308,7 +309,8 @@ def test_reset_button_stops_peak_controller_before_reset():
         await s.start()
         button = AlphaESSButton(s.c, s.entry, {'key':'dispatch_reset', 'name':'Reset', 'icon':'mdi:restart'})
         button.hass = s.hass
-        await button.async_press()
+        with patch("custom_components.alphaess_modbus.button.persistent_notification.async_dismiss"):
+            await button.async_press()
         await s.step()
         assert not s.sw.is_on
         s.c.async_reset_dispatch.assert_awaited_once()
@@ -588,7 +590,11 @@ def test_existing_mode_commands_identical_with_peak_off_or_absent(key):
                      '_start_force_export_watcher', '_start_force_import_watcher', '_start_ee_watcher'):
             setattr(other, name, Mock())
         await other.async_turn_on()
-        commands = list(s.c.async_write_dispatch.call_args_list)
+        commands = []
+        for call in s.c.async_write_dispatch.call_args_list:
+            kwargs = dict(call.kwargs)
+            assert kwargs.pop("guard")()
+            commands.append((call.args, kwargs))
         await other.async_turn_off()
         return commands, list(s.c.async_reset_dispatch.call_args_list)
     async def run():

@@ -182,15 +182,23 @@ class AlphaESSModbusClient:
 
         return value
 
-    async def write_registers(self, address: int, values: list[int]) -> None:
+    async def write_registers(
+        self, address: int, values: list[int], *, guard: Callable[[], bool] | None = None
+    ) -> bool:
         async with self._lock:
+            if guard is not None and not guard():
+                return False
             await self._ensure_connected()
+            # Recheck after reconnect: a controller may have stopped while waiting.
+            if guard is not None and not guard():
+                return False
             await self._request(
                 lambda: self._client.write_registers(
                     address, values, **{_SLAVE_KWARG: self._slave_id}
                 ),
                 f"writing {address:#06x}",
             )
+            return True
 
     async def write_register(self, address: int, value: int) -> None:
         async with self._lock:

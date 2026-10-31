@@ -152,6 +152,10 @@ class AlphaESSPeakShavingSwitch(AlphaESSSwitch):
     async def _async_turn_off_silent(self):
         await self._stop(reset=True)
 
+    def prepare_force_off(self):
+        self._is_on = False
+        self._stop_callbacks()
+
     async def async_force_off(self):
         await self._stop(reset=False)
 

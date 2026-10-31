@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any, Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -214,9 +214,15 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         return data
 
-    async def async_write_dispatch(self, values: list[int], *, reset_timer: bool = True) -> None:
+    async def async_write_dispatch(
+        self, values: list[int], *, reset_timer: bool = True,
+        guard: Callable[[], bool] | None = None,
+    ) -> None:
         from .const import DISPATCH_START_ADDR
-        await self.client.write_registers(DISPATCH_START_ADDR, values)
+        if guard is None:
+            await self.client.write_registers(DISPATCH_START_ADDR, values)
+        elif not await self.client.write_registers(DISPATCH_START_ADDR, values, guard=guard):
+            return
         if values and values[0] == 1 and len(values) >= 9:
             if reset_timer:
                 self.dispatch_started_at = datetime.now(timezone.utc)
