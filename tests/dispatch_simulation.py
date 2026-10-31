@@ -50,11 +50,15 @@ class Simulation:
     async def step(self, seconds=5, **sample):
         self.now += seconds
         self.sample(**sample)
-        with patch('custom_components.alphaess_modbus.peak_shaving.time.monotonic', return_value=self.now):
+        with patch('custom_components.alphaess_modbus.peak_shaving.time',
+                   SimpleNamespace(monotonic=lambda: self.now)):
             await self.sw._update()
 
     async def start(self):
-        with patch('custom_components.alphaess_modbus.peak_shaving.time.monotonic', return_value=self.now), patch(
+        # Replace only the controller's module binding. Patching time.monotonic
+        # itself also changes asyncio's loop clock on low-uptime Linux runners.
+        with patch('custom_components.alphaess_modbus.peak_shaving.time',
+                   SimpleNamespace(monotonic=lambda: self.now)), patch(
             'custom_components.alphaess_modbus.peak_shaving.async_track_time_interval', return_value=Mock()
         ):
             await self.sw.async_turn_on()

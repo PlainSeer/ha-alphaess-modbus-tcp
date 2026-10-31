@@ -38,7 +38,7 @@
 
 #### Validation
 
-332 Python tests passed in each of three HA/pymodbus compatibility environments, plus 23 frontend tests. Coverage includes PredBat-style eight-hour sessions, Hold/Freeze sequences, recovery-script failures, communication faults and interrupted dashboard saves.
+336 Python tests passed in each of three HA/pymodbus compatibility environments, plus 23 frontend tests. Coverage includes PredBat-style eight-hour sessions, Hold/Freeze sequences, recovery-script failures, communication faults and interrupted dashboard saves.
 
 These are automated and simulated checks; they do not establish live inverter compatibility.
 
