@@ -53,7 +53,9 @@ The AlphaESS dashboard provides three Home Assistant views: **Main**, **Readings
 
 Images use the production flow card and representative native panels with example readings; they are not screenshots of a connected inverter. Native card appearance follows your HA version and theme.
 
-After integration setup, an **AlphaESS** dashboard is created automatically. The default follows integration updates, including new sensors and layout changes. Manual edits to this default are replaced after backup; use a separate copy for permanent customisations. YAML and unrelated dashboards are preserved. [Setup, migration and rollback](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/v1.21.1b1/docs/saved-dashboard.md).
+After integration setup, an **AlphaESS** dashboard is created automatically. The default follows integration updates, including new sensors and layout changes. Manual edits to this default are replaced after backup; use a separate copy for permanent customisations. YAML and unrelated dashboards are preserved. [Setup, migration and rollback](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/v1.21.1/docs/saved-dashboard.md).
+
+**Manage AlphaESS dashboard automatically** is enabled by default in the integration options. Turn it off to keep the existing dashboard without automatic layout updates; inverter control is unaffected by this setting.
 
 ## Documentation and installation
 

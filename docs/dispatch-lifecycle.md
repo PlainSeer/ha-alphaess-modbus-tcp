@@ -1,8 +1,8 @@
-# Dispatch lifecycle and write reliability (development)
+# Dispatch lifecycle and write reliability
 
-These are development changes, not a released version. They do not require
-PredBat or any particular automation. No inverter control changes are deployed
-by updating this documentation or the development branch.
+This guide describes dispatch handling in v1.21.1. It does not require PredBat
+or any particular automation. Installing the integration update enables these
+behaviour changes; publishing a GitHub release alone does not update HA.
 
 ## Sessions and duration
 

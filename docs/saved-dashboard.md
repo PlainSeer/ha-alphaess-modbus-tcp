@@ -38,8 +38,7 @@ are retained. Screen-size visibility uses native Home Assistant configuration.
 
 ## Install and migration
 
-For this beta, enable beta versions for the repository in HACS, select
-v1.21.1b1, restart Home Assistant, then refresh its frontend. HACS displays the README for the installed
+Update to **v1.21.1** through HACS, restart Home Assistant, then refresh its frontend. HACS displays the README for the installed
 version, so an older installation may still show older previews until updated. During
 integration setup, entity registry entries are matched by platform, config-entry
 ID and stable unique ID. Renamed entities and multiple inverters are supported;
@@ -79,7 +78,7 @@ storage dashboard with a different URL. The copy is user-managed and is never
 refreshed by this integration. Keep custom copies updated manually when changing
 entity IDs. The default sidebar metadata, permissions and view routes are retained.
 
-## Automatic management (development)
+## Automatic management
 
 **Manage AlphaESS dashboard automatically** is enabled by default in the
 integration's options. Turning it off stops automatic creation and layout
