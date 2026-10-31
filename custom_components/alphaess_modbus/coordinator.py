@@ -121,6 +121,13 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.dispatch_duration_s: int = 0
         self.active_dispatch_key: str | None = None
 
+    def apply_poll_options(self, options) -> None:
+        mode = options.get("poll_mode", "normal")
+        self._scan_multiplier = float(options.get(
+            "slow_multiplier" if mode == "slow" else "fast_multiplier", 3.0 if mode == "slow" else 0.5
+        )) if mode != "normal" else 1.0
+        self.update_interval = timedelta(seconds=self._scan_multiplier if mode == "fast" else 2)
+
     def get_number(self, key: str) -> float | None:
         return self.numbers.get(key)
 

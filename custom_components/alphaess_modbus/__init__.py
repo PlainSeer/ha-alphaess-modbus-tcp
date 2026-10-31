@@ -125,7 +125,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    await hass.config_entries.async_reload(entry.entry_id)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    if entry.options.get("model_variant", "standard") != coordinator._model_variant:
+        await hass.config_entries.async_reload(entry.entry_id)
+    else:
+        coordinator.apply_poll_options(entry.options)
+        await coordinator.async_request_refresh()
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
