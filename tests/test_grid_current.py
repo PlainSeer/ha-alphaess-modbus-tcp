@@ -20,6 +20,12 @@ def test_phase_current_decode_at_block_offset(reg, raw, expected):
     assert _decode_block(reg, [0], 0) == 0.0
 
 
+@pytest.mark.parametrize("reg", REGS)
+def test_signed_current_is_preserved_without_assuming_meter_direction(reg):
+    assert _decode_block(reg, [65536 - 187], 0) == -18.7
+    assert _decode_block(reg, [187], 0) == 18.7
+
+
 def test_setup_creates_current_entities_with_stable_identity_and_missing_data():
     coordinator = NS(data=dict(zip(KEYS, (2.9, 6.4, 2.5))), last_update_success=True)
     entry = NS(entry_id="test-entry")

@@ -13,6 +13,7 @@ from .config_flow import CONF_SLAVE_ID
 from .const import DOMAIN, PLATFORMS
 from .coordinator import AlphaESSCoordinator
 from .modbus_client import AlphaESSModbusClient
+from .dashboard_options import CONF_MANAGE_DASHBOARD
 
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
@@ -48,9 +49,12 @@ def _detect_model(raw_sn: str) -> str:
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     """Register optional frontend assets without changing integration entries."""
-    from .dashboard import async_setup_dashboard
-
-    await async_setup_dashboard(hass)
+    try:
+        from .dashboard import async_setup_dashboard
+        await async_setup_dashboard(hass)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).exception("Could not load optional AlphaESS frontend")
     try:
         from .dashboard_install import async_watch_dashboard
         async_watch_dashboard(hass)
@@ -78,7 +82,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         raise ConfigEntryNotReady(f"Cannot connect to {host}:{port}")
 
     coordinator = AlphaESSCoordinator(hass, entry, client)
-    await coordinator.async_config_entry_first_refresh()
+    coordinator._entry_options = dict(getattr(entry, "options", {}))
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except BaseException:
+        await client.close()
+        raise
 
     raw_sn = (coordinator.data.get("inverter_sn") or "").strip().rstrip("\x00").strip()
     _model = _detect_model(raw_sn)
@@ -92,7 +101,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             value: int = call.data["value"]
             # hass.data[DOMAIN] also holds non-coordinator entries (e.g. the
             # per-entry switches map), so only call coordinators.
-            for obj in hass.data[DOMAIN].values():
+            for obj in list(hass.data[DOMAIN].values()):
                 if isinstance(obj, AlphaESSCoordinator):
                     await obj.async_write_raw(address, value)
 
@@ -125,11 +134,57 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 
 async def _async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
-    await hass.config_entries.async_reload(entry.entry_id)
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    if entry.options.get("model_variant", "standard") != coordinator._model_variant:
+        await hass.config_entries.async_reload(entry.entry_id)
+        return
+    previous = getattr(coordinator, "_entry_options", None)
+    current = dict(entry.options)
+    defaults = {"poll_mode": "normal", "slow_multiplier": 3.0, "fast_multiplier": 0.5}
+    if previous is None or any(previous.get(key, default) != current.get(key, default)
+                               for key, default in defaults.items()):
+        coordinator.apply_poll_options(entry.options)
+        await coordinator.async_request_refresh()
+    coordinator._entry_options = current
+    if previous is not None and previous.get(CONF_MANAGE_DASHBOARD, True) != current.get(CONF_MANAGE_DASHBOARD, True):
+        try:
+            from .dashboard_install import async_install_dashboard
+            # Shares the save lock with setup and registry updates. Disabling
+            # waits for an already-started save, without touching the coordinator.
+            await async_install_dashboard(hass)
+        except Exception:
+            import logging
+            logging.getLogger(__name__).exception("Could not update optional AlphaESS dashboard preference")
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    from homeassistant.components import persistent_notification
+
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    switches = hass.data[DOMAIN].get(f"{entry.entry_id}_switches", {})
+    owner = coordinator.active_dispatch_key
+    remaining = []
+    for key, sw in switches.items():
+        if key == owner or (owner is None and sw._uncertain is not None):
+            expiry = sw._expected_expiry.isoformat() if sw._expected_expiry else "unknown"
+            remaining.append(f"{sw._attr_name}: expected end {expiry}")
+    if remaining:
+        persistent_notification.async_create(
+            hass, "Integration unloading; dispatch may still be running on the inverter. "
+            + "; ".join(remaining) + ". Unacknowledged writes make expiry uncertain. "
+            "After reload, Dispatch Reset explicitly stops dispatch. No mode is resumed automatically.",
+            title="AlphaESS dispatch may remain active", notification_id=f"alphaess_unload_{entry.entry_id}",
+        )
+    coordinator._unloading = True
+    # Stop all producers before awaiting even the first platform removal.
+    from .switch import _MUTEX_SWITCHES
+    for key, sw in switches.items():
+        if key in _MUTEX_SWITCHES:
+            sw.prepare_force_off()
     unloaded = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if not unloaded:
+        # Keep the connection usable for explicit recovery, but do not resume.
+        coordinator._unloading = False
     if unloaded:
         coordinator: AlphaESSCoordinator = hass.data[DOMAIN].pop(entry.entry_id)
         hass.data[DOMAIN].pop(f"{entry.entry_id}_switches", None)

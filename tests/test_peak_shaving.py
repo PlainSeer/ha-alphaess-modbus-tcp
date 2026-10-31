@@ -13,63 +13,7 @@ from custom_components.alphaess_modbus.switch import AlphaESSSwitch, SWITCH_DEFS
 from custom_components.alphaess_modbus.number import AlphaESSNumber
 from custom_components.alphaess_modbus.button import AlphaESSButton
 
-
-class Simulation:
-    def __init__(self):
-        self.now = 1000.0
-        self.listeners = []
-        self.c = SimpleNamespace(
-            data={}, _last_polled={}, _scan_multiplier=1, last_update_success=True,
-            ac_limit_w=8000, active_dispatch_key=None,
-            numbers={'peak_shaving_power': 4, 'peak_shaving_cutoff_soc': 100},
-            async_write_dispatch=AsyncMock(), async_reset_dispatch=AsyncMock(),
-            async_write_register=AsyncMock(), ee_paused=False, fi_paused=False,
-        )
-        self.c.get_number = self.c.numbers.get
-        self.c.get_select = lambda key: None
-        self.c.async_add_listener = self.add_listener
-        self.entry = SimpleNamespace(entry_id='test')
-        self.sw = AlphaESSPeakShavingSwitch(self.c, self.entry)
-        self.switches = {self.sw.switch_key: self.sw}
-        self.hass = SimpleNamespace(data={DOMAIN: {'test_switches': self.switches}},
-                                    async_create_task=lambda coro, **kw: asyncio.create_task(coro))
-        self.sw.hass = self.hass
-        self.sw.async_write_ha_state = Mock()
-        self.sample()
-
-    def add_listener(self, callback):
-        self.listeners.append(callback)
-        return lambda: self.listeners.remove(callback)
-
-    def sample(self, house=7000, pv=1000, battery=0, soc=50, mode=1, lower=10):
-        self.c.data.update(power_grid=house-pv-battery, power_battery=battery,
-                           pv1_power=pv, pv2_power=0, pv3_power=0, pv4_power=0,
-                           active_power_pv_meter=0, soc_battery=soc,
-                           inverter_work_mode=mode, discharging_cutoff_soc=lower,
-                           dispatch_start=0)
-        self.c._last_polled = {key: self.now for key in (*_REQUIRED, "dispatch_start")}
-
-    async def step(self, seconds=5, **sample):
-        self.now += seconds
-        self.sample(**sample)
-        with patch('custom_components.alphaess_modbus.peak_shaving.time.monotonic', return_value=self.now):
-            await self.sw._update()
-
-    async def start(self):
-        with patch('custom_components.alphaess_modbus.peak_shaving.time.monotonic', return_value=self.now), patch(
-            'custom_components.alphaess_modbus.peak_shaving.async_track_time_interval', return_value=Mock()
-        ):
-            await self.sw.async_turn_on()
-
-    def last(self):
-        return self.c.async_write_dispatch.call_args.args[0]
-
-    def other(self, key):
-        sw = AlphaESSSwitch(self.c, self.entry, next(d for d in SWITCH_DEFS if d['key'] == key))
-        sw.hass = self.hass
-        sw.async_write_ha_state = Mock()
-        self.switches[key] = sw
-        return sw
+from .dispatch_simulation import Simulation
 
 
 def test_disabled_setup_restore_and_updates_never_write():
@@ -263,7 +207,7 @@ def test_existing_modes_stop_peak_before_starting(key, starter):
     asyncio.run(run())
 
 
-def test_write_failure_stops_session_and_attempts_single_reset():
+def test_write_failure_stops_session_without_automatic_reset():
     async def run():
         s = Simulation()
         s.c.async_write_dispatch.side_effect = OSError('connection lost')
@@ -273,7 +217,7 @@ def test_write_failure_stops_session_and_attempts_single_reset():
         assert s.sw._heartbeat_cancel is None
         await s.step(seconds=600)
         s.c.async_write_dispatch.assert_awaited_once()
-        s.c.async_reset_dispatch.assert_awaited_once()
+        s.c.async_reset_dispatch.assert_not_awaited()
     asyncio.run(run())
 
 
@@ -282,11 +226,11 @@ def test_stop_waits_for_inflight_write_and_no_stale_commands_follow():
         s = Simulation()
         entered, release = asyncio.Event(), asyncio.Event()
         order = []
-        async def delayed(values):
+        async def delayed(values, **kwargs):
             entered.set()
             await release.wait()
             order.append('write')
-        async def reset():
+        async def reset(**kwargs):
             order.append('reset')
         s.c.async_write_dispatch.side_effect = delayed
         s.c.async_reset_dispatch.side_effect = reset
@@ -308,7 +252,8 @@ def test_reset_button_stops_peak_controller_before_reset():
         await s.start()
         button = AlphaESSButton(s.c, s.entry, {'key':'dispatch_reset', 'name':'Reset', 'icon':'mdi:restart'})
         button.hass = s.hass
-        await button.async_press()
+        with patch("custom_components.alphaess_modbus.button.persistent_notification.async_dismiss"):
+            await button.async_press()
         await s.step()
         assert not s.sw.is_on
         s.c.async_reset_dispatch.assert_awaited_once()
@@ -385,11 +330,11 @@ def test_other_mode_waits_when_peak_is_already_stopping():
         s = Simulation()
         entered, release = asyncio.Event(), asyncio.Event()
         order = []
-        async def delayed(values):
+        async def delayed(values, **kwargs):
             entered.set()
             await release.wait()
             order.append('peak_write')
-        async def reset():
+        async def reset(**kwargs):
             order.append('reset')
         s.c.async_write_dispatch.side_effect = delayed
         s.c.async_reset_dispatch.side_effect = reset
@@ -432,7 +377,7 @@ def test_coalesces_callbacks_while_command_is_in_flight():
         s = Simulation()
         await s.start()
         entered, release = asyncio.Event(), asyncio.Event()
-        async def delayed(values):
+        async def delayed(values, **kwargs):
             entered.set()
             await release.wait()
         s.c.async_write_dispatch.side_effect = delayed
@@ -474,13 +419,13 @@ def test_failed_poll_immediately_resets_active_dispatch():
     asyncio.run(run())
 
 
-def test_active_unload_drains_and_resets_once():
+def test_active_unload_drains_without_reset():
     async def run():
         s = Simulation()
         await s.start()
         await s.sw.async_will_remove_from_hass()
         assert not s.sw.is_on and not s.listeners
-        s.c.async_reset_dispatch.assert_awaited_once()
+        s.c.async_reset_dispatch.assert_not_awaited()
         await s.step()
         assert s.c.async_write_dispatch.call_count == 1
     asyncio.run(run())
@@ -588,9 +533,20 @@ def test_existing_mode_commands_identical_with_peak_off_or_absent(key):
                      '_start_force_export_watcher', '_start_force_import_watcher', '_start_ee_watcher'):
             setattr(other, name, Mock())
         await other.async_turn_on()
-        commands = list(s.c.async_write_dispatch.call_args_list)
+        commands = []
+        for call in s.c.async_write_dispatch.call_args_list:
+            kwargs = dict(call.kwargs)
+            assert kwargs.pop("guard")()
+            for name in ("prepare", "expected", "attempted", "acknowledged", "confirmed"):
+                kwargs.pop(name)
+            commands.append((call.args, kwargs))
         await other.async_turn_off()
-        return commands, list(s.c.async_reset_dispatch.call_args_list)
+        resets = []
+        for call in s.c.async_reset_dispatch.call_args_list:
+            assert call.kwargs["guard"]()
+            assert call.kwargs["expected"] is None
+            resets.append("explicit reset")
+        return commands, resets
     async def run():
         assert await capture(True) == await capture(False)
     asyncio.run(run())

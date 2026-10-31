@@ -236,17 +236,17 @@ SENSOR_REGISTERS: list[ModbusSensorDef] = [
     ModbusSensorDef("current_phase_a_grid", "Grid Current Phase A",
                     0x0017, "int16", unit="A", device_class="current",
                     scale=0.1, precision=1, scan_interval=5,
-                    description="Phase A grid current (magnitude, no direction)",
+                    description="Phase A grid current; sign convention depends on inverter/meter",
                     group="Grid Power"),
     ModbusSensorDef("current_phase_b_grid", "Grid Current Phase B",
                     0x0018, "int16", unit="A", device_class="current",
                     scale=0.1, precision=1, scan_interval=5,
-                    description="Phase B grid current (magnitude, no direction)",
+                    description="Phase B grid current; sign convention depends on inverter/meter",
                     group="Grid Power"),
     ModbusSensorDef("current_phase_c_grid", "Grid Current Phase C",
                     0x0019, "int16", unit="A", device_class="current",
                     scale=0.1, precision=1, scan_interval=5,
-                    description="Phase C grid current (magnitude, no direction)",
+                    description="Phase C grid current; sign convention depends on inverter/meter",
                     group="Grid Power"),
 
     # --- Power: battery ---
@@ -1080,7 +1080,7 @@ SWITCH_DESCRIPTIONS: dict[str, tuple[str, str]] = {
 BUTTON_DESCRIPTIONS: dict[str, tuple[str, str]] = {
     "dispatch_reset": (
         "Dispatch Reset",
-        "Writes the dispatch stop command; returns the inverter to its configured scheduled operating mode",
+        "Stops local dispatch controllers, writes the existing stop command once, and verifies 0x0880; raises on unresolved failure",
     ),
     "synchronise_date_time": (
         "Synchronise Date & Time",
@@ -1088,8 +1088,8 @@ BUTTON_DESCRIPTIONS: dict[str, tuple[str, str]] = {
     ),
     "sync_dispatch_state": (
         "Sync Dispatch State",
-        "Reads live dispatch registers and corrects HA switch states to match; useful after a HA restart "
-        "if a dispatch was active when HA stopped",
+        "Reads 0x0880 directly and clears stopped dispatch controls only; preserves live paused controllers, PV and Hold preferences "
+        "and never turns dispatch switches on or claims an external dispatch",
     ),
     "restart_pcs": (
         "Restart PCS",

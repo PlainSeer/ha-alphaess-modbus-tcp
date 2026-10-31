@@ -45,7 +45,9 @@ The AlphaESS dashboard provides three Home Assistant views: **Main**, **Readings
 
 Images use the production flow card and representative native panels with example readings; they are not screenshots of a connected inverter. Native card appearance follows your HA version and theme.
 
-After integration setup, an **AlphaESS** dashboard is created automatically. Customised, YAML and unrelated dashboards are preserved. [Setup, migration and rollback](docs/saved-dashboard.md).
+After integration setup, an **AlphaESS** dashboard is created automatically. The default dashboard follows integration updates, including new sensors and layout changes. Manual edits to this default are replaced after backup; use a separate dashboard copy for permanent customisations. YAML and unrelated dashboards are preserved. [Setup, migration and rollback](docs/saved-dashboard.md).
+
+**Manage AlphaESS dashboard automatically** is available in the integration options (enabled by default). Switch it off to keep the existing dashboard without automatic creation or layout updates. All inverters share this preference: one opted-out entry pauses management of the shared dashboard. Changing it does not reload inverter control or change PredBat settings or register writes. See [automatic management and save recovery](docs/saved-dashboard.md#automatic-management).
 
 ## About this project
 
@@ -104,7 +106,10 @@ Version-specific changes and acknowledgements are recorded in the [release notes
 - **Dispatch mode selector** - Battery only, SoC Control, Load Following, Maximise Output, and more
 - **Max Feed to Grid** - set grid export limit as % of installed PV capacity
 - **Date & Time sync** - sync inverter clock to Home Assistant system time
-- **Sync Dispatch State** - reconcile HA switch states with the inverter after a restart
+- **Sync Dispatch State** - clear stale dispatch controls after a direct inverter read; preserve live paused controllers and never turn dispatch switches on
+
+Development dispatch lifecycle changes, service-error behavior, reload handling and
+retry semantics are documented in [Dispatch lifecycle](docs/dispatch-lifecycle.md).
 
 ---
 
@@ -236,9 +241,9 @@ These sensors have a 1 s `scan_interval` but the master loop runs at 2 s in Norm
 | Grid Voltage Phase A | V | 5 s | |
 | Grid Voltage Phase B | V | 5 s | |
 | Grid Voltage Phase C | V | 5 s | |
-| Grid Current Phase A | A | 5 s | Current magnitude, without import/export direction |
-| Grid Current Phase B | A | 5 s | Current magnitude, without import/export direction |
-| Grid Current Phase C | A | 5 s | Current magnitude, without import/export direction |
+| Grid Current Phase A | A | 5 s | Inverter-reported current; sign convention depends on inverter/meter |
+| Grid Current Phase B | A | 5 s | Inverter-reported current; sign convention depends on inverter/meter |
+| Grid Current Phase C | A | 5 s | Inverter-reported current; sign convention depends on inverter/meter |
 | Max Feed to Grid | % | 5 s | Grid export limit as % of installed PV capacity |
 
 #### Inverter
@@ -496,9 +501,9 @@ These are read-only sensor views of the scheduling registers. The writable equiv
 | Discharging Period 1 Stop Time | Time | hh:mm |
 | Discharging Period 2 Start Time | Time | hh:mm |
 | Discharging Period 2 Stop Time | Time | hh:mm |
-| Dispatch Reset | Button | Reset all dispatch registers immediately |
+| Dispatch Reset | Button | Stop local controllers, send the existing reset once, and verify 0x0880; unresolved failures stop calling scripts |
 | Synchronise Date & Time | Button | Sync inverter clock to HA system time |
-| Sync Dispatch State | Button | Reconcile HA switch states with the inverter (use after HA restart if dispatch was running) |
+| Sync Dispatch State | Button | Read 0x0880 directly; clear stopped dispatch controls, preserve live paused controllers and PV/Hold preferences, and never turn dispatch switches on or claim external dispatches |
 | Restart PCS | Button | Restart the Power Conversion System |
 | Restart EMS | Button | Restart the Energy Management System |
 | Reset Energy Totals | Button | **WARNING: clears all lifetime energy counters on the inverter.** Use only if you have intentionally replaced the inverter or need to zero out the totals. |
@@ -564,7 +569,7 @@ If two inverters are configured, the service writes the same value to all instan
 
 ## Dashboards
 
-The default saved dashboard uses registry-based entity discovery during setup. Renamed entities and multiple inverters are supported. Main includes every enabled setting, and Diagnostics includes every enabled sensor once. Hidden, disabled and restored orphan entities are omitted. Customising the saved dashboard detaches it from automatic registry refreshes. See the [dashboard guide](docs/managed-dashboard.md).
+The default saved dashboard uses registry-based entity discovery during setup. Renamed entities and multiple inverters are supported. Main includes every enabled setting, and Diagnostics includes every enabled sensor once. Hidden, disabled and restored orphan entities are omitted. The integration-owned default refreshes on setup and entity/device registry changes, even after manual edits. Use a separate copy for permanent customisations. See the [dashboard guide](docs/managed-dashboard.md).
 
 ### Static dashboard examples
 

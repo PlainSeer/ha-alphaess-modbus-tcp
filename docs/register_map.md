@@ -69,9 +69,9 @@ Sensors are polled at the interval shown. Entries marked **off** in the Default 
 | 0x0014 | `voltage_phase_a_grid` | Grid Voltage Phase A | Phase A grid voltage | V | int16 | - | 5 s | on |
 | 0x0015 | `voltage_phase_b_grid` | Grid Voltage Phase B | Phase B grid voltage | V | int16 | - | 5 s | on |
 | 0x0016 | `voltage_phase_c_grid` | Grid Voltage Phase C | Phase C grid voltage | V | int16 | - | 5 s | on |
-| 0x0017 | `current_phase_a_grid` | Grid Current Phase A | Phase A grid current (magnitude, no direction) | A | int16 | x0.1 | 5 s | on |
-| 0x0018 | `current_phase_b_grid` | Grid Current Phase B | Phase B grid current (magnitude, no direction) | A | int16 | x0.1 | 5 s | on |
-| 0x0019 | `current_phase_c_grid` | Grid Current Phase C | Phase C grid current (magnitude, no direction) | A | int16 | x0.1 | 5 s | on |
+| 0x0017 | `current_phase_a_grid` | Grid Current Phase A | Phase A grid current; sign convention depends on inverter/meter | A | int16 | x0.1 | 5 s | on |
+| 0x0018 | `current_phase_b_grid` | Grid Current Phase B | Phase B grid current; sign convention depends on inverter/meter | A | int16 | x0.1 | 5 s | on |
+| 0x0019 | `current_phase_c_grid` | Grid Current Phase C | Phase C grid current; sign convention depends on inverter/meter | A | int16 | x0.1 | 5 s | on |
 
 ### Battery Power
 
@@ -341,9 +341,9 @@ The six dispatch switches (Force Charging, Force Discharging, Force Export, Forc
 
 | Key | Name | Description |
 |-----|------|-------------|
-| `dispatch_reset` | Dispatch Reset | Writes the dispatch stop command; returns the inverter to its configured scheduled operating mode |
+| `dispatch_reset` | Dispatch Reset | Stops local dispatch controllers, writes the existing stop command once, and verifies 0x0880; raises on unresolved failure |
 | `synchronise_date_time` | Synchronise Date & Time | Sets the inverter real-time clock to match the current Home Assistant system time |
-| `sync_dispatch_state` | Sync Dispatch State | Reads live dispatch registers and corrects HA switch states to match; useful after a HA restart if a dispatch was active when HA stopped |
+| `sync_dispatch_state` | Sync Dispatch State | Reads 0x0880 directly and clears stopped dispatch controls only; preserves live paused controllers, PV and Hold preferences and never turns dispatch switches on or claims an external dispatch |
 | `restart_pcs` | Restart PCS | Restarts the Power Conversion System by writing code 7 to the reset register; use with caution |
 | `restart_ems` | Restart EMS | Restarts the Energy Management System by writing code 8 to the reset register; use with caution |
 | `reset_energy_totals` | Reset Energy Totals | Clears all lifetime energy counters by writing code 1 to the reset register; this is irreversible |

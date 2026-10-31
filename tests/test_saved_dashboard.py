@@ -134,7 +134,7 @@ def test_recognition_rejects_modified_beta():
     assert not install.is_beta_dashboard(config)
 
 
-def test_migration_backup_noop_registry_refresh_and_user_edits():
+def test_owned_default_refreshes_after_manual_edits_and_adds_current_sensors():
     async def run():
         with tempfile.TemporaryDirectory() as directory:
             h = HomeAssistant(directory)
@@ -156,11 +156,82 @@ def test_migration_backup_noop_registry_refresh_and_user_edits():
                 with patch.object(install, "dashboard_from_registry", return_value=renamed):
                     await install.async_install_dashboard(h)
                 current.async_save.assert_awaited_once_with(renamed)
-                current.async_load.return_value = {"views": [{"title": "My own view"}]}
+                edited = {"views": [{"title": "My own view"}]}
+                current.async_load.return_value = edited
                 current.async_save.reset_mock()
-                await install.async_install_dashboard(h)
+                updated = build_dashboard([entity("power_grid"),
+                    *[entity(f"current_phase_{p}_grid") for p in "abc"]], {})
+                with patch.object(install, "dashboard_from_registry", return_value=updated):
+                    await install.async_install_dashboard(h)
+                current.async_save.assert_awaited_once_with(updated)
+                previous = await install.Store(h, 1, "alphaess_modbus.saved_dashboard_previous").async_load()
+                assert previous["config"] == edited
+                original = await install.Store(h, 1, "alphaess_modbus.saved_dashboard_backup").async_load()
+                assert original["config"] == install.STRATEGY
+                for p in "abc":
+                    assert json.dumps(updated["views"][2]).count(
+                        f'"entity": "sensor.renamed_entry_current_phase_{p}_grid"') == 1
+                current.async_load.return_value = updated
+                current.async_save.reset_mock()
+                with patch.object(install, "dashboard_from_registry", return_value=updated):
+                    await install.async_install_dashboard(h)
                 current.async_save.assert_not_called()
             await h.async_block_till_done()
+    asyncio.run(run())
+
+
+def test_unowned_same_url_yaml_and_separate_custom_copy_remain_untouched():
+    async def run():
+        with tempfile.TemporaryDirectory() as directory:
+            h = HomeAssistant(directory)
+            custom = Mock(spec=install.LovelaceStorage)
+            custom.async_load = AsyncMock(return_value={"views": [{"title": "Custom copy"}]})
+            custom.async_save = AsyncMock()
+            unowned = Mock(spec=install.LovelaceStorage)
+            unowned.async_load = AsyncMock(return_value={"views": [{"title": "Unrelated"}]})
+            unowned.async_save = AsyncMock()
+            h.data["lovelace"] = NS(dashboards={install.URL_PATH: unowned, "my-alphaess-copy": custom})
+            with patch.object(install, "dashboard_from_registry", return_value=generated()):
+                await install.async_install_dashboard(h)
+                unowned.async_save.assert_not_called()
+                # Even a saved ownership record must not permit writing YAML.
+                await install.Store(h, 1, install.OWNER_STORE).async_save({"config": generated()})
+                yaml = NS(async_load=AsyncMock(), async_save=AsyncMock())
+                h.data["lovelace"].dashboards[install.URL_PATH] = yaml
+                await install.async_install_dashboard(h)
+                yaml.async_load.assert_not_called()
+                yaml.async_save.assert_not_called()
+                h.data["lovelace"].dashboards[install.URL_PATH] = unowned
+                await install.async_install_dashboard(h)
+                unowned.async_save.assert_awaited_once_with(generated())
+                custom.async_load.assert_not_called()
+                custom.async_save.assert_not_called()
+            await h.async_block_till_done()
+    asyncio.run(run())
+
+
+def test_previous_backup_failure_preserves_owned_edited_default():
+    current = Mock(spec=install.LovelaceStorage)
+    current.async_load = AsyncMock(return_value={"views": [{"title": "Edited"}]})
+    current.async_save = AsyncMock()
+    h = NS(data={"lovelace": NS(dashboards={install.URL_PATH: current})}, config=NS(recovery_mode=False))
+    owner = NS(async_load=AsyncMock(return_value={"config": generated()}), async_save=AsyncMock())
+    original = NS(async_load=AsyncMock(return_value={"config": install.STRATEGY}))
+    previous = NS(async_save=AsyncMock(side_effect=RuntimeError("disk full")))
+    stores = {install.OWNER_STORE: owner, "alphaess_modbus.saved_dashboard_backup": original,
+              "alphaess_modbus.saved_dashboard_previous": previous}
+    async def run():
+        with patch.object(install, "dashboard_from_registry", return_value=generated()), patch.object(
+            install, "Store", side_effect=lambda hass, version, key, **kwargs: stores[key]
+        ):
+            try:
+                await install.async_install_dashboard(h)
+            except RuntimeError:
+                pass
+            else:
+                raise AssertionError("Expected failed previous-layout backup")
+        current.async_save.assert_not_called()
+        owner.async_save.assert_not_called()
     asyncio.run(run())
 
 

@@ -16,7 +16,7 @@ Standalone successor to [PlainSeer's previous repository](https://github.com/Pla
 
 ## Sensor overview
 
-- **Grid Current Phase A / B / C:** per-phase current magnitudes in amps, with 0.1 A resolution. They do not indicate import/export direction and use the existing grid register reads.
+- **Grid Current Phase A / B / C:** per-phase inverter-reported currents in amps, with 0.1 A resolution. Values may be signed; the sign convention depends on the inverter/meter. They use the existing grid register reads.
 - **Current House Load Filtered / Current PV Production Filtered:** smooth the existing power calculations. These displayed values do not drive inverter controls.
 - **Excess Power:** filtered PV minus filtered house load, clamped at zero; an estimate, not an export command.
 - **Battery Full:** on when existing raw battery status is `1` (charging not permitted, discharging permitted), matching Hillview. Invalid, missing or unrecognised status makes it unavailable.
@@ -53,7 +53,9 @@ The AlphaESS dashboard provides three Home Assistant views: **Main**, **Readings
 
 Images use the production flow card and representative native panels with example readings; they are not screenshots of a connected inverter. Native card appearance follows your HA version and theme.
 
-After integration setup, an **AlphaESS** dashboard is created automatically. Customised, YAML and unrelated dashboards are preserved. [Setup, migration and rollback](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/v1.21.0/docs/saved-dashboard.md).
+After integration setup, an **AlphaESS** dashboard is created automatically. The default follows integration updates, including new sensors and layout changes. Manual edits to this default are replaced after backup; use a separate copy for permanent customisations. YAML and unrelated dashboards are preserved. [Setup, migration and rollback](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/blob/v1.21.1/docs/saved-dashboard.md).
+
+**Manage AlphaESS dashboard automatically** is enabled by default in the integration options. Turn it off to keep the existing dashboard without automatic layout updates; inverter control is unaffected by this setting.
 
 ## Documentation and installation
 

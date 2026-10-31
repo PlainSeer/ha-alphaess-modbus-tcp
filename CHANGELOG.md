@@ -1,5 +1,49 @@
 # Changelog
 
+### v1.21.1 — Dispatch reliability and dashboard management
+
+#### Dispatch fixes
+
+- Dispatch Reset stops local controllers, timers and watchers before resetting, then checks the inverter directly to confirm dispatch has stopped.
+- An unresolved reset raises an error, preventing normal HA recovery scripts from continuing as though it succeeded.
+- Sync Dispatch State clears stale controls without claiming ownership of externally started dispatches. Legitimately paused Excess Export and Peak Shaving controllers are preserved.
+- Prevent callbacks from older sessions sending commands after a stop, reset or restart.
+- Keep inverter duration aligned with the session deadline. Power and cutoff-SoC updates send the remaining duration instead of extending the inverter's run time.
+- Fix countdown information for deferred starts and remove unnecessary switch off/on transitions during successful restarts.
+
+#### Write reliability and reloads
+
+- Coalesce automatic setpoint updates so stale commands do not accumulate behind a slow connection.
+- Add bounded retries for transient failures, including inverter-busy responses. Check session validity and register consistency before retrying; recognise already-applied commands without unnecessary replay.
+- Expose fault and suspension details when commands fail or conflict with observed state.
+- Let in-flight transactions finish before closing the shared connection.
+- Reloading does not automatically reset or resume dispatch. A notification reports when an inverter dispatch may remain active.
+- Apply polling options without reloading the integration. Fix cached readings expiring prematurely during slow polling.
+
+#### Dashboard improvements
+
+- Add **Manage AlphaESS dashboard automatically**, enabled by default. Turning it off preserves the existing dashboard while stopping automatic creation and layout updates.
+- Restrict background refreshes to relevant AlphaESS registry changes.
+- Serialize dashboard saves and recover interrupted saves without mistaking an updated memory cache for a successful disk write.
+- Preserve backups and protect concurrent user edits. Optional frontend failures no longer prevent integration setup.
+- Clarify grid-current descriptions: sign conventions depend on the inverter and meter. Reported readings are unchanged.
+
+#### Behaviour changes to know
+
+- Failed Force-mode and generic Dispatch starts or parameter changes now raise service errors. Normal HA scripts stop at a failed action.
+- Raw `write_register` calls within `0x0880–0x088A` relinquish local dispatch sessions, preventing old controllers from reclaiming the command.
+- Automatic dashboard management can replace manual edits to the managed default after backup. Disable management or use a separate copy for permanent customisations.
+- Existing entity IDs are preserved. No PredBat dependency is introduced.
+- Register addresses, encodings and the Dispatch Reset command block are unchanged. **Dispatch duration, ordering and retry behaviour do change as described above.**
+
+#### Validation
+
+336 Python tests passed in each of three HA/pymodbus compatibility environments, plus 23 frontend tests. Coverage includes PredBat-style eight-hour sessions, Hold/Freeze sequences, recovery-script failures, communication faults and interrupted dashboard saves.
+
+These are automated and simulated checks; they do not establish live inverter compatibility.
+
+---
+
 ### v1.17.1
 
 - Correct Battery Full to use existing raw battery status `1` (Hillview’s charging-not-permitted / discharging-permitted indication), following clarification from Axel Koegler, instead of SoC exactly 100%.
