@@ -211,7 +211,9 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if errors and not data:
             raise UpdateFailed(f"All reads failed: {errors}")
 
-        # Expire entries not successfully read for more than 5x their scan interval.
+        # Allow five configured poll intervals, preserving the existing normal /
+        # fast-mode tolerance. Slow polling must not expire healthy cached data
+        # before that register is due to be read again.
         # Sensors whose register permanently fails will report unknown instead of
         # keeping the last good value indefinitely.
         for key in list(data.keys()):
@@ -219,7 +221,7 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if last == 0.0:
                 continue
             si = _SCAN_INTERVAL_MAP.get(key)
-            if si and (now - last) > 5 * si:
+            if si and (now - last) > 5 * si * max(1.0, self._scan_multiplier):
                 del data[key]
 
         return data

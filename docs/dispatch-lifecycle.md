@@ -29,6 +29,11 @@ Hold preferences are not written off during unload.
 
 Poll mode and its multipliers are updated in place and request a refresh. A model
 variant change still reloads, avoiding a mixture of old and new register scales.
+Cached register values expire after five configured poll intervals in slow
+mode, rather than five unscaled intervals. Thus a healthy slow-polled value is
+not removed before its next scheduled read. Failed values still expire; normal
+and fast modes retain their previous expiry tolerance. This does not relax the
+controllers' separate fresh-input checks.
 
 Unload invalidates generations and stops timers/listeners before waiting. Pending
 controller tasks are drained without cancellation. Closing the shared client
