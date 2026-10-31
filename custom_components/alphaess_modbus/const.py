@@ -1088,8 +1088,8 @@ BUTTON_DESCRIPTIONS: dict[str, tuple[str, str]] = {
     ),
     "sync_dispatch_state": (
         "Sync Dispatch State",
-        "Reads 0x0880 directly and clears stopped dispatch controls only; preserves PV and Hold preferences "
-        "and never claims an external dispatch",
+        "Reads 0x0880 directly and clears stopped dispatch controls only; preserves live paused controllers, PV and Hold preferences "
+        "and never turns dispatch switches on or claims an external dispatch",
     ),
     "restart_pcs": (
         "Restart PCS",

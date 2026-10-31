@@ -104,7 +104,7 @@ Version-specific changes and acknowledgements are recorded in the [release notes
 - **Dispatch mode selector** - Battery only, SoC Control, Load Following, Maximise Output, and more
 - **Max Feed to Grid** - set grid export limit as % of installed PV capacity
 - **Date & Time sync** - sync inverter clock to Home Assistant system time
-- **Sync Dispatch State** - clear stale dispatch controls after a direct inverter read; never claim external dispatch ownership
+- **Sync Dispatch State** - clear stale dispatch controls after a direct inverter read; preserve live paused controllers and never turn dispatch switches on
 
 ---
 
@@ -498,7 +498,7 @@ These are read-only sensor views of the scheduling registers. The writable equiv
 | Discharging Period 2 Stop Time | Time | hh:mm |
 | Dispatch Reset | Button | Stop local controllers, send the existing reset once, and verify 0x0880; unresolved failures stop calling scripts |
 | Synchronise Date & Time | Button | Sync inverter clock to HA system time |
-| Sync Dispatch State | Button | Read 0x0880 directly; clear stopped dispatch controls, preserve PV/Hold preferences, and leave external dispatches unclaimed |
+| Sync Dispatch State | Button | Read 0x0880 directly; clear stopped dispatch controls, preserve live paused controllers and PV/Hold preferences, and never turn dispatch switches on or claim external dispatches |
 | Restart PCS | Button | Restart the Power Conversion System |
 | Restart EMS | Button | Restart the Energy Management System |
 | Reset Energy Totals | Button | **WARNING: clears all lifetime energy counters on the inverter.** Use only if you have intentionally replaced the inverter or need to zero out the totals. |

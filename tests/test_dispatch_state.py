@@ -1,43 +1,11 @@
 """Dispatch correctness simulations: no HA instance or inverter is contacted."""
 import asyncio
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.exceptions import HomeAssistantError
 
-from custom_components.alphaess_modbus.button import AlphaESSButton
-from custom_components.alphaess_modbus.coordinator import AlphaESSCoordinator
-from custom_components.alphaess_modbus.modbus_client import AlphaESSModbusClient
-from test_peak_shaving import Simulation
-
-
-class DispatchSimulation(Simulation):
-    def __init__(self):
-        super().__init__()
-        self.hass.loop = asyncio.get_running_loop()
-        self.client = AlphaESSModbusClient('unused', 502, 1)
-        self.client._ensure_connected = AsyncMock()
-        self.writes = []
-        self.state = 0
-
-        async def write(address, values, **kwargs):
-            self.writes.append((address, list(values)))
-            self.state = values[0]
-            return SimpleNamespace(isError=lambda: False)
-
-        self.client._client = SimpleNamespace(write_registers=AsyncMock(side_effect=write))
-        self.client.read_register = AsyncMock(side_effect=lambda *args: self.state)
-        self.c.client = self.client
-        self.c.dispatch_started_at = None
-        self.c.dispatch_duration_s = 0
-        self.c.async_write_dispatch = lambda *a, **kw: AlphaESSCoordinator.async_write_dispatch(self.c, *a, **kw)
-        self.c.async_reset_dispatch = lambda: AlphaESSCoordinator.async_reset_dispatch(self.c)
-
-    def button(self, key):
-        button = AlphaESSButton(self.c, self.entry, {'key': key, 'name': key, 'icon': 'mdi:sync'})
-        button.hass = self.hass
-        return button
+from .dispatch_simulation import DispatchSimulation
 
 
 @pytest.fixture(autouse=True)
@@ -66,7 +34,7 @@ def test_sync_never_claims_external_dispatch_or_enables_slider_writes(power):
     asyncio.run(run())
 
 
-def test_sync_clears_only_mutex_and_pause_flags_without_writes():
+def test_sync_clears_stale_pause_flags_with_different_owner_without_writes():
     async def run():
         s = DispatchSimulation()
         for key in ('force_export', 'force_import', 'excess_export', 'dispatch_pv', 'force_export_hold'):
@@ -276,12 +244,12 @@ def test_recovery_sequences_abort_before_followup_actions(failure, recovery, not
         ]
         script = Script(hass, cv.SCRIPT_SCHEMA(sequence), recovery, 'script')
         with patch('custom_components.alphaess_modbus.button.asyncio.sleep', new=AsyncMock()):
-            with pytest.raises(HomeAssistantError, match='failed or could not be verified'):
+            with pytest.raises(HomeAssistantError, match='Dispatch Reset unresolved:'):
                 await script.async_run()
         await hass.async_stop()
         followup.assert_not_awaited()
         assert write_mock.await_count == 1
-        assert s.client.read_register.await_count == (0 if failure == 'write' else 3)
+        assert s.client.read_register.await_count == (0 if failure == 'write' else 11)
         notifications[0].assert_called_once()
     asyncio.run(run())
 
