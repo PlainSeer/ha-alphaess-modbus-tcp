@@ -398,6 +398,11 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         self.prepare_force_off()
         generation = self._control_generation
         owner = self._coordinator.active_dispatch_key
+        if owner is not None and owner != self.switch_key:
+            # Stopping this switch must not reset a different local controller.
+            # Callers may turn already-off modes off before updating the active
+            # mode (for example a repeated PredBat charge-start sequence).
+            return
         if automatic and (suspended or not candidates):
             return
         if self.switch_key in _HOLD_SWITCHES:

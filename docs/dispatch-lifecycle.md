@@ -76,6 +76,26 @@ HA scripts using normal error handling stop at that action. External callers,
 including PredBat, retain their own error-handling/sequencing behavior; this
 integration cannot promise that an external multi-action sequence aborts.
 
+### Development stop-ownership fix (not in published v1.21.1)
+
+Turning off one switch no longer resets the inverter when a different local
+controller owns the dispatch session. The requested switch still clears its own
+callbacks and local state. The active owner's session, deadline and register
+command remain intact. Explicitly stopping the owner and Dispatch Reset retain
+their existing stop behavior. With no local owner, an explicit off retains the
+legacy reset behavior; this fix does not infer ownership of an external command.
+
+This addresses a reproducible interaction with sequences that turn other modes
+off before updating an already-running mode. In the supplied PredBat charge-start
+sequence, off requests for Dispatch/Force Export/Force Discharging/Force Import
+previously sent reset blocks even when those switches were already off. Force
+Charging stayed on in HA, so its following stop-SoC rewrite compared its earlier
+charge command with the reset block and raised a conflict. Repeating the start
+could recover charging but repeat the same failure later. The equivalent generic
+sequence reproduces this in tests; it needs no PredBat dependency or HA config
+change. The original incident's exact returned block was not retained, so live
+confirmation remains necessary before attributing every reported failure to it.
+
 ### Development diagnostic follow-up (not in published v1.21.1)
 
 A conflict error now includes the register-block address, the exact `observed`
