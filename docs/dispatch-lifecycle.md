@@ -1,8 +1,10 @@
 # Dispatch lifecycle and write reliability
 
-This guide describes dispatch handling in v1.21.1. It does not require PredBat
-or any particular automation. Installing the integration update enables these
-behaviour changes; publishing a GitHub release alone does not update HA.
+This guide describes dispatch handling in v1.21.2, including the lifecycle and
+write-reliability changes introduced in v1.21.1. It does not require PredBat or any
+particular automation. Installing the
+integration update enables these behaviour changes; publishing a GitHub release
+alone does not update HA.
 
 ## Sessions and duration
 
@@ -75,6 +77,47 @@ Home Assistant service error rather than only logging success-looking failures.
 HA scripts using normal error handling stop at that action. External callers,
 including PredBat, retain their own error-handling/sequencing behavior; this
 integration cannot promise that an external multi-action sequence aborts.
+
+### v1.21.2: stop isolation
+
+Turning off one switch no longer resets the inverter when a different local
+controller owns the dispatch session. The requested switch still clears its own
+callbacks and local state. The active owner's session, deadline and register
+command remain intact. Explicitly stopping the owner and Dispatch Reset retain
+their existing stop behavior. With no local owner, an explicit off retains the
+legacy reset behavior; this fix does not infer ownership of an external command.
+
+This addresses sequences that turn alternative modes off before updating an
+already-running mode. For example, off requests for Dispatch/Force Export/Force
+Discharging/Force Import could send reset blocks even when those switches were
+already off. Force Charging remained on in HA, so its following stop-SoC rewrite
+compared the earlier charge command with the reset block and raised a conflict.
+The generic sequence is covered by regression tests and needs no PredBat
+dependency or automation changes.
+
+### v1.21.2: conflict diagnostics
+
+A conflict error now includes the register-block address, the exact `observed`
+11-word read and the `expected` candidate arrays used by the comparison. For an
+active charge update, candidates are ordered acknowledged first, then uncertain,
+omitting either when absent. Automatic stop retries can also include a stop attempt.
+These details appear in the existing error log, service error and switch
+`dispatch_error` attribute. The log retains the failed comparison even if a
+subsequent explicit start clears the switch's fault attributes.
+
+Array offsets 0 through 10 map to addresses `0x0880` through `0x088A` in order.
+Active power uses offsets 1/2, reactive power 3/4, mode 5, SoC 6, duration 7/8,
+flow direction 9 and PV 10. Power and duration each use high/low word order.
+Use these raw values rather than rounded SoC or formatted duration sensors to
+identify a mismatch. The expected arrays are earlier acknowledged/uncertain
+commands, not the new command that was vetoed. PV left unchanged and a decreasing
+duration can legitimately differ; the existing comparison allowances still apply.
+
+This change captures an existing read only. It adds no reads, transmissions,
+retries, resets or resume actions, and does not relax conflict detection. It is
+diagnostic support for investigating consistency failures. Tests replay a start,
+power update, repeated stop-SoC and duration sequence with consistent and injected
+conflicting reads. Simulation coverage does not establish hardware validation.
 
 ## Servo writes and retries
 
