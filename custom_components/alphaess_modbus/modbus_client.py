@@ -286,7 +286,14 @@ class AlphaESSModbusClient:
                         return True
                     match = next((cmd for cmd in candidates if command_matches(observed, cmd)), None)
                     if match is None:
-                        raise DispatchConflict("Dispatch read-back differs from acknowledged and uncertain commands")
+                        # Preserve the exact read that vetoed this write. Polled
+                        # sensors round/format some fields and cannot reconstruct
+                        # the raw comparison after a caller restarts the session.
+                        raise DispatchConflict(
+                            "Dispatch read-back differs from acknowledged and uncertain commands; "
+                            f"block={address:#06x}..{address + 10:#06x}; "
+                            f"observed={observed}; expected={candidates}"
+                        )
                     if confirmed is not None:
                         confirmed(match)
                 # Read-back and reconnect may have taken time. Prepare last.

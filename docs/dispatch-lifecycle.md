@@ -76,6 +76,32 @@ HA scripts using normal error handling stop at that action. External callers,
 including PredBat, retain their own error-handling/sequencing behavior; this
 integration cannot promise that an external multi-action sequence aborts.
 
+### Development diagnostic follow-up (not in published v1.21.1)
+
+A conflict error now includes the register-block address, the exact `observed`
+11-word read and the `expected` candidate arrays used by the comparison. For an
+active charge update, candidates are ordered acknowledged first, then uncertain,
+omitting either when absent. Automatic stop retries can also include a stop attempt.
+These details appear in the existing error log, service error and switch
+`dispatch_error` attribute. The log retains the failed comparison even if a
+subsequent explicit start clears the switch's fault attributes.
+
+Array offsets 0 through 10 map to addresses `0x0880` through `0x088A` in order.
+Active power uses offsets 1/2, reactive power 3/4, mode 5, SoC 6, duration 7/8,
+flow direction 9 and PV 10. Power and duration each use high/low word order.
+Use these raw values rather than rounded SoC or formatted duration sensors to
+identify a mismatch. The expected arrays are earlier acknowledged/uncertain
+commands, not the new command that was vetoed. PV left unchanged and a decreasing
+duration can legitimately differ; the existing comparison allowances still apply.
+
+This change captures an existing read only. It adds no reads, transmissions,
+retries, resets or resume actions, and does not relax conflict detection. It is
+diagnostic preparation for the observed PredBat charge-update failures, not a
+claim that their hardware cause is resolved. Tests replay the start, power bridge,
+repeated stop-SoC and duration sequence with consistent and injected conflicting
+reads. The actual returned block from the reported incident was not logged by
+v1.21.1 and cannot be recovered from those tests.
+
 ## Servo writes and retries
 
 Force Export, Force Import and Excess Export have one background writer each.
