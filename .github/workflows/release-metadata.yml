@@ -1,0 +1,59 @@
+name: Release metadata maintenance
+
+on:
+  push:
+    branches: [maintenance/release-metadata-v1.21.1]
+    paths: [.github/workflows/release-metadata.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  update-metadata:
+    if: github.repository == 'PlainSeer/ha-alphaess-modbus-tcp' && github.ref == 'refs/heads/maintenance/release-metadata-v1.21.1'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const repo = context.repo;
+            const badId = 430192213, stableId = 428962454, betaId = 430401690;
+            const check = (condition, message) => { if (!condition) throw new Error(message); };
+            const snapshot = release => JSON.stringify({
+              id: release.id, tag: release.tag_name, name: release.name, body: release.body,
+              target: release.target_commitish, prerelease: release.prerelease,
+              assets: release.assets.map(a => [a.id, a.name, a.size, a.digest]).sort((a,b) => a[0]-b[0])
+            });
+            const getRelease = async id => (await github.rest.repos.getRelease({...repo, release_id: id})).data;
+            const bad = await getRelease(badId);
+            const stable = await getRelease(stableId);
+            const beta = await getRelease(betaId);
+            check(bad.tag_name === 'v1.21.1' && !bad.prerelease && !bad.immutable, 'Unexpected release to unpublish');
+            check(stable.tag_name === 'v1.21.0' && !stable.draft && !stable.prerelease, 'Previous stable is unavailable');
+            check(beta.tag_name === 'v1.21.2b1' && !beta.draft && beta.prerelease, 'Expected public beta is unavailable');
+            const latestBefore = (await github.rest.repos.getLatestRelease(repo)).data;
+            check(['v1.21.1', 'v1.21.0'].includes(latestBefore.tag_name), 'Latest stable changed; review before continuing');
+            const tags = {};
+            for (const tag of ['v1.21.1', 'v1.21.0', 'v1.21.2b1']) {
+              tags[tag] = (await github.rest.git.getRef({...repo, ref: 'tags/' + tag})).data.object;
+            }
+            check(tags['v1.21.1'].sha === '00832dbeb9efbcd04cfe3acbf68d3920aef65a5c', 'Release tag changed');
+            const originals = [bad, stable, beta].map(snapshot);
+            if (!bad.draft) {
+              await github.rest.repos.updateRelease({...repo, release_id: badId, draft: true, make_latest: 'false'});
+            }
+            await github.rest.repos.updateRelease({...repo, release_id: stableId, make_latest: 'true'});
+            const after = [await getRelease(badId), await getRelease(stableId), await getRelease(betaId)];
+            check(after[0].draft, 'Release was not unpublished');
+            check(!after[1].draft && !after[1].prerelease, 'Previous stable changed unexpectedly');
+            check(!after[2].draft && after[2].prerelease, 'Public beta changed unexpectedly');
+            check(after.map(snapshot).every((value, i) => value === originals[i]), 'Release content, assets or targets changed');
+            const latest = (await github.rest.repos.getLatestRelease(repo)).data;
+            check(latest.id === stableId && latest.tag_name === 'v1.21.0', 'Latest stable was not restored');
+            for (const tag of Object.keys(tags)) {
+              const current = (await github.rest.git.getRef({...repo, ref: 'tags/' + tag})).data.object;
+              check(current.sha === tags[tag].sha && current.type === tags[tag].type, 'A release tag changed');
+            }
+            core.info('Release metadata updated and verified; tags, assets and release content retained.');
