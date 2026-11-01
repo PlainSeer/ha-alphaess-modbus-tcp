@@ -1,7 +1,8 @@
 # Dispatch lifecycle and write reliability
 
-This guide describes dispatch handling in v1.21.1, with beta changes marked for
-v1.21.2b1. It does not require PredBat or any particular automation. Installing the
+This guide describes dispatch handling in v1.21.2, including the lifecycle and
+write-reliability changes introduced in v1.21.1. It does not require PredBat or any
+particular automation. Installing the
 integration update enables these behaviour changes; publishing a GitHub release
 alone does not update HA.
 
@@ -77,7 +78,7 @@ HA scripts using normal error handling stop at that action. External callers,
 including PredBat, retain their own error-handling/sequencing behavior; this
 integration cannot promise that an external multi-action sequence aborts.
 
-### v1.21.2b1 beta: stop isolation
+### v1.21.2: stop isolation
 
 Turning off one switch no longer resets the inverter when a different local
 controller owns the dispatch session. The requested switch still clears its own
@@ -94,7 +95,7 @@ compared the earlier charge command with the reset block and raised a conflict.
 The generic sequence is covered by regression tests and needs no PredBat
 dependency or automation changes.
 
-### v1.21.2b1 beta: conflict diagnostics
+### v1.21.2: conflict diagnostics
 
 A conflict error now includes the register-block address, the exact `observed`
 11-word read and the `expected` candidate arrays used by the comparison. For an

@@ -1,5 +1,14 @@
 # Changelog
 
+### v1.21.2 — Dispatch stop isolation
+
+- Promote v1.21.2b1 to stable with the same runtime code.
+- Prevent an off request for an inactive switch from resetting another local controller's running dispatch, avoiding read-back conflicts during repeated charging/discharging sequences.
+- Preserve active-controller stops, explicit stops with no local session, Dispatch Reset values and verification, and conflict protection.
+- Include observed and expected register arrays in conflict errors.
+- Includes the dispatch lifecycle, write reliability, polling and dashboard-management improvements documented under v1.21.1 below. Review its behaviour changes when upgrading from v1.21.0 or earlier.
+- Regression validation covers 400 Python tests in three compatibility environments and 23 frontend tests. Simulated tests do not establish compatibility with every inverter or automation.
+
 ### v1.21.2b1 — Dispatch stop isolation (beta)
 
 - Prevent an off request for an inactive switch from resetting a different local controller's running dispatch. Repeated charging/discharging sequences can now update their active session without conflicting with an unintended reset.
