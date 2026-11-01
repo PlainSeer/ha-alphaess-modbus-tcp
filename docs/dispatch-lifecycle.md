@@ -85,16 +85,13 @@ command remain intact. Explicitly stopping the owner and Dispatch Reset retain
 their existing stop behavior. With no local owner, an explicit off retains the
 legacy reset behavior; this fix does not infer ownership of an external command.
 
-This addresses a reproducible interaction with sequences that turn other modes
-off before updating an already-running mode. In the supplied PredBat charge-start
-sequence, off requests for Dispatch/Force Export/Force Discharging/Force Import
-previously sent reset blocks even when those switches were already off. Force
-Charging stayed on in HA, so its following stop-SoC rewrite compared its earlier
-charge command with the reset block and raised a conflict. Repeating the start
-could recover charging but repeat the same failure later. The equivalent generic
-sequence reproduces this in tests; it needs no PredBat dependency or HA config
-change. The original incident's exact returned block was not retained, so live
-confirmation remains necessary before attributing every reported failure to it.
+This addresses sequences that turn alternative modes off before updating an
+already-running mode. For example, off requests for Dispatch/Force Export/Force
+Discharging/Force Import could send reset blocks even when those switches were
+already off. Force Charging remained on in HA, so its following stop-SoC rewrite
+compared the earlier charge command with the reset block and raised a conflict.
+The generic sequence is covered by regression tests and needs no PredBat
+dependency or automation changes.
 
 ### Development diagnostic follow-up (not in published v1.21.1)
 
@@ -116,11 +113,9 @@ duration can legitimately differ; the existing comparison allowances still apply
 
 This change captures an existing read only. It adds no reads, transmissions,
 retries, resets or resume actions, and does not relax conflict detection. It is
-diagnostic preparation for the observed PredBat charge-update failures, not a
-claim that their hardware cause is resolved. Tests replay the start, power bridge,
-repeated stop-SoC and duration sequence with consistent and injected conflicting
-reads. The actual returned block from the reported incident was not logged by
-v1.21.1 and cannot be recovered from those tests.
+diagnostic support for investigating consistency failures. Tests replay a start,
+power update, repeated stop-SoC and duration sequence with consistent and injected
+conflicting reads. Simulation coverage does not establish hardware validation.
 
 ## Servo writes and retries
 
