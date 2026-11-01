@@ -81,6 +81,49 @@ def test_explicit_stop_without_a_local_owner_keeps_legacy_reset_behavior():
     run(scenario())
 
 
+@pytest.mark.parametrize('owner', ['excess_export', 'peak_shaving'])
+def test_off_of_another_switch_preserves_a_paused_controller(owner):
+    async def scenario():
+        s = await setup(owner)
+        sw = s.switches[owner]
+        try:
+            if owner == 'excess_export':
+                s.c.ee_paused = True
+            else:
+                sw.paused = True
+            await sw._pause_dispatch()
+            assert s.registers[0] == 0 and sw.is_on
+            writes = len(s.writes)
+            await s.switches['force_charging'].async_turn_off()
+            assert sw.is_on and s.c.active_dispatch_key == owner
+            assert s.c.ee_paused if owner == 'excess_export' else sw.paused
+            assert len(s.writes) == writes
+        finally:
+            await sw.async_force_off()
+    run(scenario())
+
+
+def test_repeated_predbat_discharge_start_keeps_soc_and_rate_updates_working():
+    async def scenario():
+        s = await setup('force_discharging')
+        sw = s.switches['force_discharging']
+        try:
+            for power, soc in ((7.5, 20), (3.0, 30)):
+                writes = len(s.writes)
+                for key in ('dispatch', 'force_charging', 'force_export', 'force_import'):
+                    await s.switches[key].async_turn_off()
+                await set_param(s, 'force_discharging_cutoff_soc', soc)
+                await set_param(s, 'force_discharging_duration', 480)
+                await sw.async_turn_on()
+                await set_param(s, 'force_discharging_power', power)
+                assert sw.is_on and not sw._suspended
+                assert s.registers[2] == 32000 + power * 1000
+                assert all(command[0] == 1 for _, command in s.writes[writes:])
+        finally:
+            await sw.async_force_off()
+    run(scenario())
+
+
 def test_repeated_predbat_charge_start_and_export_stop_do_not_reset_charging():
     async def scenario():
         s = await setup('force_charging')
@@ -90,8 +133,8 @@ def test_repeated_predbat_charge_start_and_export_stop_do_not_reset_charging():
         try:
             for power in (2.2, 1.8):
                 writes = len(s.writes)
-                # charge_start_service's initial cleanup, from the supplied apps
-                # config. PredBat can repeat the full template while already on.
+                # Representative charge-start cleanup: callers can repeat the
+                # full sequence while charging is already on.
                 for key in ('dispatch', 'force_export', 'force_discharging', 'force_import'):
                     await s.switches[key].async_turn_off()
                 assert len(s.writes) == writes
@@ -113,7 +156,7 @@ def test_repeated_predbat_charge_start_and_export_stop_do_not_reset_charging():
 
 
 @pytest.mark.parametrize('mode,power', [('Battery only Charges from PV (1)', -8), ('No Battery Charge (19)', 0)])
-def test_off_actions_preserve_dispatch_holds_and_70g_power_updates(mode, power):
+def test_off_actions_preserve_dispatch_holds_and_mode_1_power_updates(mode, power):
     async def scenario():
         s = DispatchSimulation()
         for key in CONTROLS[:-1]:
