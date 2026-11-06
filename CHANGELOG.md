@@ -1,6 +1,6 @@
 # Changelog
 
-### Unreleased — House-load sample consistency
+### v1.21.3b1 — House-load sample consistency (beta)
 
 - Treat negative calculated house-load balances as inconsistent samples rather than zero consumption. Share sample handling between sensors and affected controllers.
 - Retain the last valid house-load reading for at most 10 seconds for display and daily energy estimation, expose its estimated status, and report missing data after expiry. Failed or missing reads do not use this hold.
