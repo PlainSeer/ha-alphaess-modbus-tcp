@@ -18,7 +18,8 @@ from .const import (
     DISPATCH_SOC_SCALE, DOMAIN, ModbusNumberDef, SENSOR_REGISTERS,
 )
 from .house_energy import finite
-from .switch import AlphaESSSwitch, _MUTEX_SWITCHES, _calc_house_load, _calc_pv_production
+from .switch import AlphaESSSwitch, _MUTEX_SWITCHES, _calc_pv_production
+from .house_load import house_load_sample
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -198,10 +199,10 @@ class AlphaESSPeakShavingSwitch(AlphaESSSwitch):
         # Use the existing raw calculations. Advance the private lowpass on fresh
         # power samples, even at constant power, so control converges after a step.
         # Repeated timer callbacks on cached samples must not advance the filter.
-        pv, house = _calc_pv_production(d), _calc_house_load(d)
+        pv, house = _calc_pv_production(d), house_load_sample(c).raw
         stamps = tuple(c._last_polled[key] for key in _REQUIRED[:7])
         for key, value in (("pv", pv), ("house", house)):
-            if self._previous.get(key) != stamps:
+            if house is not None and self._previous.get(key) != stamps:
                 self._filtered[key] = round((1 - FILTER_GAIN) * self._filtered.get(key, value) + FILTER_GAIN * value, 2)
                 self._previous[key] = stamps
         return d, soc, lower, upper, limit * 1000, ac_limit, pv
@@ -251,6 +252,13 @@ class AlphaESSPeakShavingSwitch(AlphaESSSwitch):
             self._normal_since = now
         if soc <= lower:
             await self._pause("discharge_cutoff", now)
+            return
+        if house_load_sample(self._coordinator).raw is None:
+            if (soc >= upper and not self.paused and
+                    (self._resumed_at is None or now - self._resumed_at >= PAUSE_SECONDS)):
+                await self._pause("above_soc_threshold", now)
+            else:
+                self.reason = "waiting_for_consistent_power"
             return
         house, pv = self._filtered["house"], self._filtered["pv"]
         if self.paused:

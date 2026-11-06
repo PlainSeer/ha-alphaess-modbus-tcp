@@ -1,5 +1,5 @@
 """Daily consumption integrated from the existing house-load calculation."""
-from datetime import date
+from datetime import date, timedelta
 import time
 
 from homeassistant.components.sensor import RestoreSensor, SensorDeviceClass, SensorStateClass
@@ -11,6 +11,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .house_energy import finite
+from .house_load import house_load_sample
 
 
 class AlphaESSHouseLoadDailySensor(CoordinatorEntity, RestoreSensor):
@@ -30,6 +31,7 @@ class AlphaESSHouseLoadDailySensor(CoordinatorEntity, RestoreSensor):
         self._day = dt_util.now().date()
         self._energy = 0.0
         self._last = None
+        self._last_hold_until = None
         self._ready = False
         self._gap = True  # First day begins when enabled, not retrospectively.
 
@@ -50,6 +52,9 @@ class AlphaESSHouseLoadDailySensor(CoordinatorEntity, RestoreSensor):
             self.hass, self._midnight, hour=0, minute=0, second=0
         ))
         self._sample()
+        self.async_on_remove(house_load_sample(self.coordinator).async_add_listener(
+            self._handle_coordinator_update, self.hass.loop
+        ))
 
     def _power(self):
         if not self.coordinator.last_update_success:
@@ -89,8 +94,13 @@ class AlphaESSHouseLoadDailySensor(CoordinatorEntity, RestoreSensor):
             self._gap = False
         power = self._power()
         self._ready = power is not None
-        if power is None:
+        sample = house_load_sample(self.coordinator)
+        hold_until = None
+        if sample.inconsistent and sample.hold_until is not None:
+            hold_until = now + timedelta(seconds=sample.hold_until - time.monotonic())
+        if power is None and hold_until is None:
             self._last = None
+            self._last_hold_until = None
             self._gap = True
             return
         if self._last is not None:
@@ -103,10 +113,19 @@ class AlphaESSHouseLoadDailySensor(CoordinatorEntity, RestoreSensor):
             if 0 < elapsed <= 60:
                 midnight = dt_util.as_utc(dt_util.start_of_local_day(dt_util.as_local(now)))
                 start = max(previous_time, midnight)
-                self._energy += previous_power * (now - start).total_seconds() / 3_600_000
+                end = now
+                for expiry in (self._last_hold_until, hold_until):
+                    if expiry is not None:
+                        end = min(end, expiry)
+                self._energy += previous_power * max(0, (end - start).total_seconds()) / 3_600_000
+                if end < now:
+                    self._gap = True
             elif elapsed != 0:
                 self._gap = True
-        self._last = (now, power)
+        self._last = (now, power) if power is not None else None
+        self._last_hold_until = hold_until if power is not None else None
+        if power is None:
+            self._gap = True
 
     def _handle_coordinator_update(self):
         self._sample()

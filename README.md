@@ -72,6 +72,8 @@ The integration adds passive sensors using data already read by the integration.
 
 The displayed power filters use 80% previous value and 20% new value on source-value changes; unchanged values do not advance them. They initialise from current readings after restart and reset after unavailable input.
 
+Current House Load combines separately read PV, battery and grid power. A negative balance is treated as an inconsistent sample. Display and daily accumulation retain the last valid reading for at most 10 seconds, with `estimated: true` and `sample_status: estimated` on Current House Load. After that limit it reports unknown and daily accumulation marks the omitted interval as incomplete. Missing/failed reads do not qualify for this estimate. Controllers use fresh valid samples, rather than held values, and skip inconsistent samples without resetting a session solely for that reason. Existing mode/SoC safety actions and dispatch deadlines still apply.
+
 Energy estimates can have gaps and do not automatically replace existing helpers or automations. The accumulated daily sensor starts when enabled; missing/stale samples and gaps over 60 seconds are omitted and flagged as `incomplete_day`. See the [energy calculations and limitations](docs/passive-house-energy.md) before using these sensors.
 
 [Optional Peak Shaving](docs/peak-shaving.md) uses existing dispatch controls when explicitly enabled. It is **off by default and after restart**, simulation-tested rather than hardware-tested, and cannot guarantee a hard import cap.

@@ -25,6 +25,10 @@ from .const import (
     DISPATCH_PV_UNCHANGED,
 )
 from .coordinator import AlphaESSCoordinator
+from .house_load import (
+    house_load as _calc_house_load, house_load_sample,
+    pv_production as _calc_pv_production,
+)
 from .dispatch import DispatchWriteError, WriteNotSent, WriteRejected, WriteBusy, WriteIndeterminate, DispatchConflict, command_matches
 
 _LOGGER = logging.getLogger(__name__)
@@ -53,25 +57,6 @@ def _control_lock(coordinator):
         coordinator._control_lock = asyncio.Lock()
     return coordinator._control_lock
 
-
-def _calc_pv_production(data: dict) -> int | None:
-    keys = ["pv1_power", "pv2_power", "pv3_power", "pv4_power", "active_power_pv_meter"]
-    if any(data.get(k) is None for k in keys):
-        return None
-    return max(0, sum(int(data[k]) for k in keys))
-
-
-def _calc_house_load(data: dict) -> int | None:
-    grid = data.get("power_grid")
-    if grid is None:
-        return None
-    if float(data.get("inverter_work_mode", 0)) == 2:
-        return round(float(grid))
-    pv = _calc_pv_production(data)
-    battery = data.get("power_battery")
-    if pv is None or battery is None:
-        return None
-    return max(0, int(pv) + int(battery) + int(grid))
 
 # Switches that are mutually exclusive — turning one on turns all others off.
 _MUTEX_SWITCHES = [
@@ -555,6 +540,8 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
 
     def _servo_word(self):
         d = self._coordinator.data or {}
+        if house_load_sample(self._coordinator).raw is None:
+            return None
         grid = d.get("power_grid")
         if grid is None:
             return None
@@ -563,7 +550,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         target = self._num(f"{self.switch_key}_power", 5.0) * 1000
         if baseline is None:
             word = self._compute_force_export_power_raw(d) if exporting else self._compute_force_import_power_raw(d)
-            return word if word is not None else round(32000 + target if exporting else 32000 - target)
+            return word
         error = float(grid) + target if exporting else target - float(grid)
         previous = baseline - 32000 if exporting else 32000 - baseline
         power = max(0, min(self._coordinator.ac_limit_w, previous + _SERVO_GAIN * error))
@@ -948,7 +935,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         the 32000-offset discharge power written at dispatch offset 2.
         """
         pv_production_w = _calc_pv_production(d)
-        house_load_w = _calc_house_load(d)
+        house_load_w = house_load_sample(self._coordinator).raw
         if house_load_w is None or pv_production_w is None:
             return None
         target_export_w = int(self._num("force_export_power", 5.0) * 1000)
@@ -1010,6 +997,8 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                 )
                 self._pending_tasks.add(task)
                 task.add_done_callback(self._pending_tasks.discard)
+                return
+            if house_load_sample(self._coordinator).raw is None:
                 return
             grid = d.get("power_grid")
             if grid is None:
@@ -1173,8 +1162,10 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
 
             else:
                 pv_total = _calc_pv_production(d)
-                pv = pv_total or 0
-                hl = _calc_house_load(d) or 0
+                hl = house_load_sample(self._coordinator).raw
+                if pv_total is None or hl is None:
+                    return
+                pv = pv_total
                 excess = max(0, pv - hl)
                 work_mode_ok = (
                     work_mode_normal
@@ -1205,7 +1196,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         32000-offset charge power written at dispatch offset 2.
         """
         pv_production_w = _calc_pv_production(d)
-        house_load_w = _calc_house_load(d)
+        house_load_w = house_load_sample(self._coordinator).raw
         if house_load_w is None or pv_production_w is None:
             return None
         import_power_kw = self._num("force_import_power", 5.0)
@@ -1255,6 +1246,8 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             if self._coordinator.fi_paused:
                 return
             d = self._coordinator.data or {}
+            if house_load_sample(self._coordinator).raw is None:
+                return
             grid = d.get("power_grid")
             if grid is None:
                 return
