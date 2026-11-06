@@ -6,6 +6,7 @@ from unittest.mock import Mock
 import pytest
 
 from custom_components.alphaess_modbus.const import DOMAIN
+from custom_components.alphaess_modbus.house_load import house_load_sample
 from custom_components.alphaess_modbus.sensor import (
     AlphaESSCalculatedSensor, AlphaESSFilteredPowerSensor, CALCULATED_SENSORS,
     async_setup_entry,
@@ -65,7 +66,13 @@ def test_lowpass_changes_once_per_source_change_without_changing_raw():
 
 def test_excess_clamps_and_does_not_depend_on_other_entities_updating():
     coordinator, _, sensors = make_sensors()
+    sample = house_load_sample(coordinator)
+    now = sample.hold_until - 10
     coordinator.data["power_battery"] = 5000
+    # Confirm the sustained load on completed polls before updating just this
+    # entity; it must not depend on another entity running its callback first.
+    for offset in (2, 7, 12):
+        sample.update(coordinator, coordinator.data, now + offset)
     sensors["excess_power"]._handle_coordinator_update()
     assert sensors["excess_power"].native_value == 0
 

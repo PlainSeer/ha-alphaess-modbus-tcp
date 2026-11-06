@@ -7,6 +7,7 @@ from custom_components.alphaess_modbus.button import AlphaESSButton
 from custom_components.alphaess_modbus.coordinator import AlphaESSCoordinator
 from custom_components.alphaess_modbus.modbus_client import AlphaESSModbusClient
 from custom_components.alphaess_modbus.const import DOMAIN
+from custom_components.alphaess_modbus.house_load import HouseLoadSample
 from custom_components.alphaess_modbus.peak_shaving import AlphaESSPeakShavingSwitch, _REQUIRED
 from custom_components.alphaess_modbus.switch import AlphaESSSwitch, SWITCH_DEFS
 
@@ -46,6 +47,11 @@ class Simulation:
                            inverter_work_mode=mode, discharging_cutoff_soc=lower,
                            dispatch_start=0)
         self.c._last_polled = {key: self.now for key in (*_REQUIRED, "dispatch_start")}
+        # Match the coordinator: publish every completed power poll, including
+        # fresh readings whose values happen to be unchanged.
+        if not hasattr(self.c, 'house_load_sample'):
+            self.c.house_load_sample = HouseLoadSample()
+        self.c.house_load_sample.update(self.c, self.c.data, self.now)
 
     async def step(self, seconds=5, **sample):
         self.now += seconds

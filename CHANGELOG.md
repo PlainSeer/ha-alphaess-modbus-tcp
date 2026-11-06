@@ -1,5 +1,13 @@
 # Changelog
 
+### v1.21.3b2 — Confirm upward house-load steps (beta)
+
+- Extend the issue #10 fix to large positive balance jumps, which v1.21.3b1 could accept and then hold during a following negative sample. Require three fresh power snapshots spanning at least 10 seconds at a stable new level before replacing the trusted baseline.
+- Preserve the original 10-second estimate expiry while confirmation is pending. Cached readings cannot confirm a step or extend the estimate. Current House Load exposes `sample_reason`, including `unconfirmed_step` and `negative_balance`.
+- Replay both public sample sequences in regression tests, including the dispatch-end peaks. Verify sustained 2, 8 and 20 kW loads, fresh unchanged polls, energy gaps and Peak Shaving recovery after confirmation.
+- Measurement trade-off: genuine large load increases are delayed, short or varying loads can be omitted, and gaps are not backfilled. This is heuristic protection, not proof that every positive artifact is identified. No additional Modbus reads, command encodings, dispatch deadlines or direct Force Charging/Discharging command paths change.
+- Supersedes v1.21.3b1 for beta testing. Counter restoration and historical correction remain outside this fix.
+
 ### v1.21.3b1 — House-load sample consistency (beta)
 
 - Treat negative calculated house-load balances as inconsistent samples rather than zero consumption. Share sample handling between sensors and affected controllers.

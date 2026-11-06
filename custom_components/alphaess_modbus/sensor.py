@@ -245,8 +245,10 @@ class AlphaESSCalculatedSensor(CoordinatorEntity[AlphaESSCoordinator], SensorEnt
     @property
     def extra_state_attributes(self):
         if self._defn.key == "current_house_load":
-            status = house_load_sample(self.coordinator).status
-            return {"sample_status": status, "estimated": status == "estimated"}
+            sample = house_load_sample(self.coordinator)
+            status = sample.status
+            return {"sample_status": status, "estimated": status == "estimated",
+                    "sample_reason": sample.reason}
         return None
 
     @property
