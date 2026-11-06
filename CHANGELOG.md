@@ -1,6 +1,6 @@
 # Changelog
 
-### Unreleased — House-load availability correction (development)
+### v1.21.3b3 — House-load availability correction (beta)
 
 - Withdraw the amplitude-only positive-step filter introduced in v1.21.3b2. It could omit genuine short or changing loads and repeatedly report unknown while a larger load was waiting for confirmation. Finite non-negative balances are accepted immediately; positive register-lag artifacts remain unresolved.
 - Preserve negative-balance handling, its original 10-second estimate limit, missing-read handling, mode/SoC safety actions and dispatch deadlines. Positive artifacts can still enter the calculation and the bounded estimate; this change does not claim to despike them.
