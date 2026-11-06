@@ -1,5 +1,12 @@
 # Changelog
 
+### Unreleased — House-load availability correction (development)
+
+- Withdraw the amplitude-only positive-step filter introduced in v1.21.3b2. It could omit genuine short or changing loads and repeatedly report unknown while a larger load was waiting for confirmation. Finite non-negative balances are accepted immediately; positive register-lag artifacts remain unresolved.
+- Preserve negative-balance handling, its original 10-second estimate limit, missing-read handling, mode/SoC safety actions and dispatch deadlines. Positive artifacts can still enter the calculation and the bounded estimate; this change does not claim to despike them.
+- Retain a known accumulated daily amount during power-data gaps, with `accumulation_paused` and `incomplete_day` indicating missing coverage. Stop adding energy after the bounded estimate expires; do not backfill outages or invent an initial zero. Keep midnight, clock and same-day restore safeguards.
+- No additional Modbus reads, register command changes or PredBat dependency. Consumers still need to handle genuine unknown power; their missing-data handling is separate work.
+
 ### v1.21.3b2 — Confirm upward house-load steps (beta)
 
 - Extend the issue #10 fix to large positive balance jumps, which v1.21.3b1 could accept and then hold during a following negative sample. Require three fresh power snapshots spanning at least 10 seconds at a stable new level before replacing the trusted baseline.
