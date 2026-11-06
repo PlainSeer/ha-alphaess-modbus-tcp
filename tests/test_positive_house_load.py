@@ -1,4 +1,4 @@
-"""Replay public issue #10 snapshots and distinguish sustained loads from spikes."""
+"""Do not manufacture missing load data by rejecting positive changes."""
 import asyncio
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -41,64 +41,64 @@ def test_public_full_battery_sequence_holds_only_trusted_readings():
                        battery=battery, grid=grid) == expected
 
 
-def test_public_dispatch_end_sequence_never_promotes_the_positive_spikes():
+def test_public_dispatch_end_peaks_are_an_explicit_remaining_limitation():
     c, sample = coordinator(), HouseLoadSample()
     rows = [(42.492, 2, 7554, -6663, 893),
-            (44.499, 3, 7533, -3545, 893),
-            (46.579, 5, 7540, 40, 893),
-            (48.489, 5, 7580, 1724, 893),
-            (50.536, 5, 7602, 1054, 893),
-            (52.569, 4, -1370, -1185, None),
+            (44.499, 3, 7533, -3545, 3991),
+            (46.579, 5, 7540, 40, 7585),
+            (48.489, 5, 7580, 1724, 9309),
+            (50.536, 5, 7602, 1054, 8661),
+            (52.569, 4, -1370, -1185, 8661),
             (56.490, 5, 549, 189, 743),
             (64.567, 5, 627, -74, 558)]
     for when, meter, battery, grid, expected in rows:
         assert observe(sample, c, when, meter=meter, battery=battery, grid=grid) == expected
-        if 44 < when < 52:
+        # A positive amplitude test cannot prove that these are false peaks.
+        # Keep this replay honest about the remaining positive-spike limitation.
+        if when == 52.569:
             assert sample.raw is None
-            assert sample.reason == "unconfirmed_step"
+            assert sample.reason == "negative_balance"
+        else:
+            assert sample.raw == expected
     assert sample.raw == 558
 
 
 @pytest.mark.parametrize("load", [2000, 8000, 20000])
-def test_sustained_real_loads_are_confirmed_without_a_wattage_cap(load):
+def test_large_load_steps_are_immediate_without_a_wattage_cap(load):
     c, sample = coordinator(), HouseLoadSample()
     assert observe(sample, c, 100, load=500) == 500
-    for when in (102, 104, 106, 108):
-        assert observe(sample, c, when, load=load) == 500
-        assert sample.raw is None
-    assert observe(sample, c, 110, load=load) is None
-    assert observe(sample, c, 112, load=load) == load
+    for when in (102, 104, 106, 108, 110, 112):
+        assert observe(sample, c, when, load=load) == load
     assert sample.raw == load and sample.reason == "valid"
 
 
-def test_eight_second_flat_spike_then_negative_cannot_be_held_as_trusted():
+def test_eight_second_real_load_burst_is_not_discarded():
     c, sample = coordinator(), HouseLoadSample()
     observe(sample, c, 100, load=500)
     for when in (102, 104, 106, 108):
-        assert observe(sample, c, when, load=7500) == 500
-    assert observe(sample, c, 110, battery=-2000) is None
-    assert sample._last_good == 500
+        assert observe(sample, c, when, load=7500) == 7500
+    assert observe(sample, c, 110, load=500) == 500
     assert observe(sample, c, 112, load=600) == 600
 
 
-def test_cached_samples_cannot_confirm_a_candidate_even_after_ten_seconds():
+def test_ramping_and_cycling_loads_cannot_be_starved_by_a_stability_band():
     c, sample = coordinator(), HouseLoadSample()
     observe(sample, c, 100, load=500)
-    observe(sample, c, 102, load=3000)
-    observe(sample, c, 104, load=3000)
-    observe(sample, c, 106, load=3000)
-    sample.update(c, c.data, 114)  # no newly polled power registers
-    assert sample.raw is None and sample.value(114) is None
-    assert observe(sample, c, 116, load=3000) == 3000
+    for when in range(102, 222, 2):
+        load = 2000 + (when - 102) * 150
+        assert observe(sample, c, when, load=load) == load
+    for when in range(222, 342, 2):
+        load = 3000 if when % 4 else 8000
+        assert observe(sample, c, when, load=load) == load
 
 
-def test_missing_read_clears_the_pending_step_and_estimate():
+def test_missing_read_clears_the_power_estimate_after_a_large_step():
     c, sample = coordinator(), HouseLoadSample()
     observe(sample, c, 100, load=500)
     observe(sample, c, 102, load=5000)
     sample.update(c, c.data, 104, usable=False)
     assert sample.raw is None and sample.value(104) is None
-    assert sample._candidate is None and sample.reason == "missing"
+    assert sample.reason == "missing"
 
 
 def test_ordinary_steps_and_genuine_zero_remain_immediate():
@@ -108,14 +108,14 @@ def test_ordinary_steps_and_genuine_zero_remain_immediate():
         assert sample.raw == load
 
 
-def test_peak_waits_for_confirmation_then_controls_the_sustained_load():
+def test_peak_reacts_to_a_large_load_step_without_false_waiting_or_reset():
     async def run():
         s = Simulation()
         await s.start()
         old = s.last()
         await s.step(house=20000)
-        assert s.last() == old
-        assert s.sw.reason == "waiting_for_consistent_power"
+        assert s.last()[2] > old[2]
+        assert s.sw.reason != "waiting_for_consistent_power"
         assert not s.sw.paused and not s.sw._suspended
         s.c.async_reset_dispatch.assert_not_called()
         await s.step(house=20000)
@@ -124,7 +124,7 @@ def test_peak_waits_for_confirmation_then_controls_the_sustained_load():
     asyncio.run(run())
 
 
-def test_completed_coordinator_polls_confirm_unchanged_power_values():
+def test_completed_coordinator_polls_accept_large_and_unchanged_power_values():
     async def run():
         c = coordinator()
         c._scan_multiplier, c._model_variant = 1, "standard"
@@ -138,11 +138,11 @@ def test_completed_coordinator_polls_confirm_unchanged_power_values():
                 MODULE + "coordinator.SENSOR_REGISTERS", [grid]
             ), patch(MODULE + "coordinator._decode_block", return_value=3000):
                 c.data = await AlphaESSCoordinator._async_update_data(c)
-            assert c.house_load_sample.raw == (3000 if when == 112 else None)
+            assert c.house_load_sample.raw == 3000
     asyncio.run(run())
 
 
-def test_daily_energy_does_not_integrate_spikes_or_backfill_confirmation_gap():
+def test_daily_energy_counts_a_real_load_increase_without_a_confirmation_gap():
     c, sample = coordinator(), HouseLoadSample()
     c.house_load_sample = sample
     entry = SimpleNamespace(entry_id="test")
@@ -154,5 +154,6 @@ def test_daily_energy_does_not_integrate_spikes_or_backfill_confirmation_gap():
         with clock(100 + seconds):
             observe(sample, c, 100 + seconds, load=load)
             daily._sample(start + timedelta(seconds=seconds))
-    assert daily._energy == pytest.approx((500 * 10 + 8000 * 2) / 3_600_000)
-    assert daily.extra_state_attributes["incomplete_day"] is True
+    assert daily._energy == pytest.approx((500 * 2 + 8000 * 12) / 3_600_000)
+    assert daily.extra_state_attributes["incomplete_day"] is False
+    assert daily.extra_state_attributes["accumulation_paused"] is False

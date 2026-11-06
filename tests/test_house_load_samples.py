@@ -152,7 +152,8 @@ def test_daily_expiry_followed_by_outage_does_not_extrapolate():
         with clock(100 + seconds):
             daily._sample(now + timedelta(seconds=seconds))
     assert daily._energy == pytest.approx(500 * 10 / 3_600_000)
-    assert not daily.available
+    assert daily.available
+    assert daily.extra_state_attributes["accumulation_paused"]
     with clock(130):
         c.last_update_success = False
         daily._sample(now + timedelta(seconds=30))

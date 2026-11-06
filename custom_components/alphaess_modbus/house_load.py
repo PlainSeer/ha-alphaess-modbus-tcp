@@ -4,8 +4,6 @@ import time
 from .house_energy import finite
 
 HOUSE_LOAD_HOLD_SECONDS = 10.0
-STEP_CONFIRM_SECONDS = 10.0
-STEP_MIN_READINGS = 3
 PV_KEYS = ("pv1_power", "pv2_power", "pv3_power", "pv4_power", "active_power_pv_meter")
 POWER_KEYS = (*PV_KEYS, "power_battery", "power_grid")
 SAMPLE_KEYS = (*POWER_KEYS, "inverter_work_mode")
@@ -56,7 +54,6 @@ class HouseLoadSample:
         self._last_good = None
         self._mode = None
         self.reason = "missing"
-        self._candidate = None
         self._listeners = set()
         self._loop = None
         self._expiry = None
@@ -66,44 +63,20 @@ class HouseLoadSample:
         mode = finite(data.get("inverter_work_mode", 0))
         if mode != self._mode:
             self._last_good = self.hold_until = None
-            self._candidate = None
         self._mode = mode
         balance = house_load_balance(data) if usable else None
-        negative = balance is not None and mode != 2 and balance < 0
-        pending_step = False
-        if (balance is not None and not negative and mode != 2
-                and self._last_good is not None
-                and balance > self._last_good + max(1000, abs(self._last_good) * 0.5)):
-            # A large positive balance may be a real load step or a register-lag
-            # spike. Confirm a stable new level across fresh power readings before
-            # allowing it to replace the trusted baseline. This is not a watt cap.
-            stamps = getattr(coordinator, "_last_polled", {})
-            token = tuple(stamps.get(key) for key in POWER_KEYS)
-            if all(stamp is None for stamp in token):
-                token = now  # Explicitly supplied snapshots without poll metadata.
-            candidate = self._candidate
-            fresh = candidate is None or token != candidate[3]
-            if candidate is None or abs(balance - candidate[0]) > max(250, candidate[0] * 0.1):
-                candidate = (balance, now, 1, token)
-            elif token != candidate[3]:
-                candidate = (candidate[0], candidate[1], candidate[2] + 1, token)
-            self._candidate = candidate
-            pending_step = (now - candidate[1] < STEP_CONFIRM_SECONDS
-                            or candidate[2] < STEP_MIN_READINGS or not fresh)
-        else:
-            self._candidate = None
-        self.inconsistent = negative or pending_step
-        self.reason = "negative_balance" if negative else "unconfirmed_step" if pending_step else "valid"
+        # Amplitude alone cannot distinguish a real load step from register lag.
+        # Do not delay or discard finite non-negative balances on that basis.
+        self.inconsistent = balance is not None and mode != 2 and balance < 0
+        self.reason = "negative_balance" if self.inconsistent else "valid"
         self.raw = None if self.inconsistent else balance
         if balance is None:
             # Failed/missing reads are outages, not permission to estimate.
             self._last_good = self.hold_until = None
-            self._candidate = None
             self.reason = "missing"
         elif not self.inconsistent:
             self._last_good = balance
             self.hold_until = now + HOUSE_LOAD_HOLD_SECONDS
-            self._candidate = None
         self._schedule_expiry(now)
 
     def async_add_listener(self, callback, loop):

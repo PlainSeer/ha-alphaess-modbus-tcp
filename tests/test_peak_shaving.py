@@ -40,9 +40,6 @@ def test_example_dispatch_block_and_power_bounds():
         await s.start()
         assert s.last() == [1, 0, 34000, 0, 32000, 2, int(10/.392), 0, 300, 255, 0]
         await s.step(house=100000)
-        assert s.last()[2] == 34000  # wait for a confirmed upward load step
-        await s.step(house=100000)
-        await s.step(house=100000)
         assert 34000 < s.last()[2] <= 40000  # ramp toward the 8 kW AC cap
         assert s.c.async_write_register.call_count == 0
         s.c.numbers['peak_shaving_power'] = 0
