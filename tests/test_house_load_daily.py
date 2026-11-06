@@ -139,4 +139,4 @@ def test_restore_precision_without_integrating_downtime(same_day):
         asyncio.run(s.async_added_to_hass())
     assert s._energy == (1.23456789 if same_day else 0)
     assert s._last is not None
-    s.async_on_remove.assert_called_once()
+    assert s.async_on_remove.call_count == 2
