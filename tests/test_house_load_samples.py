@@ -104,14 +104,14 @@ def test_sensor_metadata_and_estimate_expiry():
     sensor = AlphaESSCalculatedSensor(c, entry, next(d for d in CALCULATED_SENSORS if d.key == "current_house_load"))
     with clock(100):
         assert sensor.native_value == 500
-        assert sensor.extra_state_attributes == {"sample_status": "valid", "estimated": False}
+        assert sensor.extra_state_attributes == {"sample_status": "valid", "estimated": False, "sample_reason": "valid"}
     inconsistent(c)
     with clock(102):
         assert sensor.native_value == 500
-        assert sensor.extra_state_attributes == {"sample_status": "estimated", "estimated": True}
+        assert sensor.extra_state_attributes == {"sample_status": "estimated", "estimated": True, "sample_reason": "negative_balance"}
     with clock(111):
         assert sensor.native_value is None
-        assert sensor.extra_state_attributes == {"sample_status": "inconsistent", "estimated": False}
+        assert sensor.extra_state_attributes == {"sample_status": "inconsistent", "estimated": False, "sample_reason": "negative_balance"}
 
 
 @pytest.mark.parametrize("recover_at", [6, 20])
