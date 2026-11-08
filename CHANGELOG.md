@@ -1,5 +1,13 @@
 # Changelog
 
+### v1.21.3 — House-load consistency and daily energy reliability
+
+- Promote v1.21.3b3 to stable with the same runtime code.
+- Treat negative house-load balances as inconsistent samples instead of false zero consumption, with clearly marked estimates limited to 10 seconds. Missing/failed reads and expired estimates report unknown power.
+- Accept finite non-negative readings immediately and keep held estimates out of affected controller decisions. Preserve operating-mode checks, SoC protections and dispatch deadlines.
+- Retain known daily consumption totals during source gaps, expose paused/incomplete coverage, and preserve midnight rollover and same-day restoration safeguards. Do not backfill unmeasured intervals or repair historical statistics.
+- Positive register-timing peaks remain unresolved; issue #10 stays open. Derived power and energy readings remain estimates.
+
 ### v1.21.3b3 — House-load availability correction (beta)
 
 - Withdraw the amplitude-only positive-step filter introduced in v1.21.3b2. It could omit genuine short or changing loads and repeatedly report unknown while a larger load was waiting for confirmation. Finite non-negative balances are accepted immediately; positive register-lag artifacts remain unresolved.
