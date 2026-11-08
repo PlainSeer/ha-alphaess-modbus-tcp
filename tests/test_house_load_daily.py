@@ -84,7 +84,8 @@ def test_invalid_reading_skips_gap(bad):
     sample(s, now)
     c.data['power_grid'] = bad
     sample(s, now + timedelta(seconds=10))
-    assert s.native_value is None
+    assert s.available and s.native_value == 0
+    assert s.extra_state_attributes['accumulation_paused']
     c.data['power_grid'] = 1000
     sample(s, now + timedelta(seconds=40))
     assert s.native_value == 0
@@ -99,11 +100,13 @@ def test_stale_failure_negative_and_long_gap():
     sample(s, now)
     c._last_polled['power_grid'] = 0
     sample(s, now + timedelta(seconds=10))
-    assert not s.available
+    assert s.available and s.native_value == 0
+    assert s.extra_state_attributes['accumulation_paused']
     c._last_polled['power_grid'] = 100
     c.last_update_success = False
     sample(s, now + timedelta(seconds=20))
-    assert not s.available
+    assert s.available and s.native_value == 0
+    assert s.extra_state_attributes['accumulation_paused']
     c.last_update_success = True
     c.data.update(inverter_work_mode=2, power_grid=-1000)
     sample(s, now + timedelta(seconds=30))
@@ -139,4 +142,4 @@ def test_restore_precision_without_integrating_downtime(same_day):
         asyncio.run(s.async_added_to_hass())
     assert s._energy == (1.23456789 if same_day else 0)
     assert s._last is not None
-    s.async_on_remove.assert_called_once()
+    assert s.async_on_remove.call_count == 2

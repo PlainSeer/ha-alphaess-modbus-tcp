@@ -1,5 +1,5 @@
 """Daily consumption integrated from the existing house-load calculation."""
-from datetime import date
+from datetime import date, timedelta
 import time
 
 from homeassistant.components.sensor import RestoreSensor, SensorDeviceClass, SensorStateClass
@@ -11,6 +11,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .house_energy import finite
+from .house_load import house_load_sample
 
 
 class AlphaESSHouseLoadDailySensor(CoordinatorEntity, RestoreSensor):
@@ -30,7 +31,11 @@ class AlphaESSHouseLoadDailySensor(CoordinatorEntity, RestoreSensor):
         self._day = dt_util.now().date()
         self._energy = 0.0
         self._last = None
-        self._ready = False
+        self._last_hold_until = None
+        self._total_known = False
+        self._power_ready = False
+        self._time_valid = True
+        self._latest_sample_time = None
         self._gap = True  # First day begins when enabled, not retrospectively.
 
     async def async_added_to_hass(self):
@@ -45,11 +50,15 @@ class AlphaESSHouseLoadDailySensor(CoordinatorEntity, RestoreSensor):
                 saved_day = None
             if saved_day == self._day and value is not None and value >= 0:
                 self._energy = value
+                self._total_known = True
                 self._gap = True  # Never invent consumption during downtime.
         self.async_on_remove(async_track_time_change(
             self.hass, self._midnight, hour=0, minute=0, second=0
         ))
         self._sample()
+        self.async_on_remove(house_load_sample(self.coordinator).async_add_listener(
+            self._handle_coordinator_update, self.hass.loop
+        ))
 
     def _power(self):
         if not self.coordinator.last_update_success:
@@ -78,35 +87,51 @@ class AlphaESSHouseLoadDailySensor(CoordinatorEntity, RestoreSensor):
     def _sample(self, now=None):
         now = now or dt_util.utcnow()
         today = dt_util.as_local(now).date()
-        if today < self._day:
+        if (today < self._day or (self._latest_sample_time is not None
+                                 and now < self._latest_sample_time)):
             # A backwards clock adjustment must not reset or double-count a day.
-            self._ready = False
+            self._time_valid = False
+            self._power_ready = False
             self._gap = True
             return
+        self._time_valid = True
+        self._latest_sample_time = now
         if today > self._day:
             self._day = today
             self._energy = 0.0
             self._gap = False
         power = self._power()
-        self._ready = power is not None
-        if power is None:
+        self._power_ready = power is not None
+        if self._power_ready:
+            self._total_known = True
+        sample = house_load_sample(self.coordinator)
+        hold_until = None
+        if sample.inconsistent and sample.hold_until is not None:
+            hold_until = now + timedelta(seconds=sample.hold_until - time.monotonic())
+        if power is None and hold_until is None:
             self._last = None
+            self._last_hold_until = None
             self._gap = True
             return
         if self._last is not None:
             previous_time, previous_power = self._last
             elapsed = (now - previous_time).total_seconds()
-            if elapsed < 0:
-                self._ready = False
-                self._gap = True
-                return
             if 0 < elapsed <= 60:
                 midnight = dt_util.as_utc(dt_util.start_of_local_day(dt_util.as_local(now)))
                 start = max(previous_time, midnight)
-                self._energy += previous_power * (now - start).total_seconds() / 3_600_000
+                end = now
+                for expiry in (self._last_hold_until, hold_until):
+                    if expiry is not None:
+                        end = min(end, expiry)
+                self._energy += previous_power * max(0, (end - start).total_seconds()) / 3_600_000
+                if end < now:
+                    self._gap = True
             elif elapsed != 0:
                 self._gap = True
-        self._last = (now, power)
+        self._last = (now, power) if power is not None else None
+        self._last_hold_until = hold_until if power is not None else None
+        if power is None:
+            self._gap = True
 
     def _handle_coordinator_update(self):
         self._sample()
@@ -119,7 +144,9 @@ class AlphaESSHouseLoadDailySensor(CoordinatorEntity, RestoreSensor):
 
     @property
     def available(self):
-        return super().available and self._ready
+        # This is a retained local total, not an instantaneous device reading.
+        # Losing its source pauses accumulation without erasing a known amount.
+        return self._total_known and self._time_valid
 
     @property
     def native_value(self):
@@ -129,4 +156,5 @@ class AlphaESSHouseLoadDailySensor(CoordinatorEntity, RestoreSensor):
     def extra_state_attributes(self):
         return {"tracking_date": self._day.isoformat(),
                 "accumulated_kwh": self._energy, "incomplete_day": self._gap,
+                "accumulation_paused": not self._power_ready,
                 "method": "left", "source": "current_house_load"}

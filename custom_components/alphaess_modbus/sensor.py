@@ -26,6 +26,7 @@ from .const import DAILY_ENERGY_SENSORS, DOMAIN, SENSOR_REGISTERS, ModbusSensorD
 from .coordinator import AlphaESSCoordinator
 from .house_energy import AlphaESSHouseEnergySensor
 from .house_load_daily import AlphaESSHouseLoadDailySensor
+from .house_load import house_load_sample, pv_production
 
 
 @dataclass
@@ -232,10 +233,23 @@ class AlphaESSCalculatedSensor(CoordinatorEntity[AlphaESSCoordinator], SensorEnt
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, entry.entry_id)})
 
     def _pv_production(self, d: dict) -> int | None:
-        keys = ["pv1_power", "pv2_power", "pv3_power", "pv4_power", "active_power_pv_meter"]
-        if any(d.get(k) is None for k in keys):
-            return None
-        return max(0, sum(int(d[k]) for k in keys))
+        return pv_production(d)
+
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        if self._defn.key == "current_house_load":
+            self.async_on_remove(house_load_sample(self.coordinator).async_add_listener(
+                self.async_write_ha_state, self.hass.loop
+            ))
+
+    @property
+    def extra_state_attributes(self):
+        if self._defn.key == "current_house_load":
+            sample = house_load_sample(self.coordinator)
+            status = sample.status
+            return {"sample_status": status, "estimated": status == "estimated",
+                    "sample_reason": sample.reason}
+        return None
 
     @property
     def native_value(self):
@@ -247,16 +261,7 @@ class AlphaESSCalculatedSensor(CoordinatorEntity[AlphaESSCoordinator], SensorEnt
             return self._pv_production(d)
 
         if self._defn.key == "current_house_load":
-            grid = d.get("power_grid")
-            if grid is None:
-                return None
-            if float(d.get("inverter_work_mode", 0)) == 2:
-                return round(float(grid))
-            pv = self._pv_production(d)
-            battery = d.get("power_battery")
-            if pv is None or battery is None:
-                return None
-            return max(0, int(pv) + int(battery) + int(grid))
+            return house_load_sample(self.coordinator).value()
 
         if self._defn.key == "battery_remaining_time":
             raw = d.get("battery_remaining_time_raw")
@@ -328,6 +333,10 @@ class AlphaESSFilteredPowerSensor(CoordinatorEntity[AlphaESSCoordinator], Sensor
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         self._sample()
+        if "current_house_load" in self._sources:
+            self.async_on_remove(house_load_sample(self.coordinator).async_add_listener(
+                self._handle_coordinator_update, self.hass.loop
+            ))
 
     def _handle_coordinator_update(self) -> None:
         self._sample()

@@ -19,6 +19,7 @@ from .const import (
     DISPATCH_PV_UNCHANGED,
 )
 from .modbus_client import AlphaESSModbusClient
+from .house_load import HouseLoadSample, POWER_KEYS
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -111,6 +112,7 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._entry_id = config_entry.entry_id
         self.client = client
         self._last_polled: dict[str, float] = {}
+        self.house_load_sample = HouseLoadSample()
         # Caches for number/select entity values — populated by those entities
         # so switch.py can read them without going through hass.states.
         self.numbers: dict[str, float] = {}
@@ -154,6 +156,7 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         numeric_regs = [r for r in due if r.data_type != "string"]
         errors: list[str] = []
         errors_this_cycle = 0
+        failed_keys: set[str] = set()
 
         # Block reads for numeric registers
         for g_start, g_count, g_regs in _group_registers(numeric_regs):
@@ -183,12 +186,14 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         data[reg.key] = value
                         self._last_polled[reg.key] = now
                     except Exception as decode_err:
+                        failed_keys.add(reg.key)
                         errors.append(f"{reg.key}: decode error: {decode_err}")
                         errors_this_cycle += 1
                         _LOGGER.debug("Decode error for %s: %s", reg.key, decode_err)
             except ModbusException as err:
                 errors_this_cycle += 1
                 for reg in g_regs:
+                    failed_keys.add(reg.key)
                     errors.append(f"{reg.key}: {err}")
                 _LOGGER.debug("Block read error at %#06x+%d: %s", g_start, g_count, err)
 
@@ -224,6 +229,13 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if si and (now - last) > 5 * si * max(1.0, self._scan_multiplier):
                 del data[key]
 
+        needed = (("power_grid",) if data.get("inverter_work_mode") == 2 else POWER_KEYS)
+        needed = (*needed, "inverter_work_mode")
+        if not hasattr(self, "house_load_sample"):
+            self.house_load_sample = HouseLoadSample()
+        self.house_load_sample.update(
+            self, data, time.monotonic(), usable=not failed_keys.intersection(needed)
+        )
         return data
 
     async def async_write_dispatch(

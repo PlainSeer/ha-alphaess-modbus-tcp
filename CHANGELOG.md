@@ -1,5 +1,34 @@
 # Changelog
 
+### v1.21.3 — House-load consistency and daily energy reliability
+
+- Promote v1.21.3b3 to stable with the same runtime code.
+- Treat negative house-load balances as inconsistent samples instead of false zero consumption, with clearly marked estimates limited to 10 seconds. Missing/failed reads and expired estimates report unknown power.
+- Accept finite non-negative readings immediately and keep held estimates out of affected controller decisions. Preserve operating-mode checks, SoC protections and dispatch deadlines.
+- Retain known daily consumption totals during source gaps, expose paused/incomplete coverage, and preserve midnight rollover and same-day restoration safeguards. Do not backfill unmeasured intervals or repair historical statistics.
+- Positive register-timing peaks remain unresolved; issue #10 stays open. Derived power and energy readings remain estimates.
+
+### v1.21.3b3 — House-load availability correction (beta)
+
+- Withdraw the amplitude-only positive-step filter introduced in v1.21.3b2. It could omit genuine short or changing loads and repeatedly report unknown while a larger load was waiting for confirmation. Finite non-negative balances are accepted immediately; positive register-lag artifacts remain unresolved.
+- Preserve negative-balance handling, its original 10-second estimate limit, missing-read handling, mode/SoC safety actions and dispatch deadlines. Positive artifacts can still enter the calculation and the bounded estimate; this change does not claim to despike them.
+- Retain a known accumulated daily amount during power-data gaps, with `accumulation_paused` and `incomplete_day` indicating missing coverage. Stop adding energy after the bounded estimate expires; do not backfill outages or invent an initial zero. Keep midnight, clock and same-day restore safeguards.
+- No additional Modbus reads, register command changes or PredBat dependency. Consumers still need to handle genuine unknown power; their missing-data handling is separate work.
+
+### v1.21.3b2 — Confirm upward house-load steps (beta)
+
+- Extend the issue #10 fix to large positive balance jumps, which v1.21.3b1 could accept and then hold during a following negative sample. Require three fresh power snapshots spanning at least 10 seconds at a stable new level before replacing the trusted baseline.
+- Preserve the original 10-second estimate expiry while confirmation is pending. Cached readings cannot confirm a step or extend the estimate. Current House Load exposes `sample_reason`, including `unconfirmed_step` and `negative_balance`.
+- Replay both public sample sequences in regression tests, including the dispatch-end peaks. Verify sustained 2, 8 and 20 kW loads, fresh unchanged polls, energy gaps and Peak Shaving recovery after confirmation.
+- Measurement trade-off: genuine large load increases are delayed, short or varying loads can be omitted, and gaps are not backfilled. This is heuristic protection, not proof that every positive artifact is identified. No additional Modbus reads, command encodings, dispatch deadlines or direct Force Charging/Discharging command paths change.
+- Supersedes v1.21.3b1 for beta testing. Counter restoration and historical correction remain outside this fix.
+
+### v1.21.3b1 — House-load sample consistency (beta)
+
+- Treat negative calculated house-load balances as inconsistent samples rather than zero consumption. Share sample handling between sensors and affected controllers.
+- Retain the last valid house-load reading for at most 10 seconds for display and daily energy estimation, expose its estimated status, and report missing data after expiry. Failed or missing reads do not use this hold.
+- Skip inconsistent power samples when seeding or adjusting Force Export/Import, resuming Excess Export, or evaluating Peak Shaving. Preserve existing mode/SoC safety actions and dispatch deadlines; add no register reads or writes.
+
 ### v1.21.2 — Dispatch stop isolation
 
 - Promote v1.21.2b1 to stable with the same runtime code.
