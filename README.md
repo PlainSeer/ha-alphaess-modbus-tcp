@@ -90,6 +90,12 @@ To test it, find the disabled sensor under the AlphaESS device's entities and en
 
 AlphaESS documents `0x0090` as energy fed to grid (PV) and `0x0092` as energy consumed from grid (PV). Some AC-coupled installations report production in `0x0092`; the physical direction needs validation. Compare each counter's **increase over the same daylight and overnight periods** with integrated AC PV meter power and the PV inverter's own energy reading, if available. Do not compare lifetime totals against a daily total, add the new counter to existing PV energy totals, or select it as an Energy dashboard source until its meaning is confirmed. Neither lifetime PV-meter counter feeds the current daily PV or accumulated house-load calculation.
 
+### Optional house-load comparisons (v1.21.4b2 beta)
+
+For [issue #10](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues/10), this beta adds **House Load Median 5 (Comparison)** and **House Load Battery Step (Comparison)**. Both are diagnostic sensors, **disabled by default**, using existing completed power polls without additional Modbus requests. Existing house-load readings, filtered readings, energy totals and control inputs remain unchanged. These are experimental estimates: both can hide genuine short loads, including loads supplied by the battery, and neither proves a peak is false.
+
+See the [comparison guide](docs/house-load-comparisons.md) for enabling, time limits, gap handling, recorded attributes and test cases. Home Assistant can reload the integration when a disabled entity is enabled; enable test sensors while no dispatch is active. Compare alongside the existing sources; do not replace working PredBat or other control inputs. Energy comparisons are offline in this beta, with no additional energy totals or historical repair.
+
 ### Validation
 
 The test workflow covers HA 2026.10.4 / Python 3.14 and HA 2024.12.5 / Python 3.12, alongside HACS and hassfest validation. See the pull request checks for each change. These tests use an in-memory coordinator, not a connected inverter. They do not certify every inverter model, firmware, HA version or operating mode.
