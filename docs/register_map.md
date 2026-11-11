@@ -118,10 +118,15 @@ Sensors are polled at the interval shown. Entries marked **off** in the Default 
 | 0x0010 | `total_energy_feed_to_grid_meter` | Total Energy Feed to Grid (Meter) | Lifetime export energy measured at the grid meter; use this for the HA energy dashboard | kWh | uint32 | x0.01 | 60 s | on |
 | 0x0012 | `total_energy_consumption_from_grid_meter` | Total Energy Consumption from Grid (Meter) | Lifetime import energy measured at the grid meter; use this for the HA energy dashboard | kWh | uint32 | x0.01 | 60 s | on |
 | 0x0090 | `total_energy_feed_to_grid_pv` | Total Energy Feed to Grid (PV) | Lifetime energy exported from PV, measured at the AC PV meter | kWh | uint32 | x0.01 | 60 s | on |
+| 0x0092 | `total_energy_pv_meter_0092` | PV Meter Energy (0x0092) | Opposite-direction AC PV meter lifetime counter; physical direction requires validation | kWh | uint32 | x0.01 | 60 s | off |
 | 0x0120 | `total_energy_charge_battery` | Total Energy Charge Battery | Lifetime energy delivered to the battery | kWh | uint32 | x0.1 | 60 s | on |
 | 0x0122 | `total_energy_discharge_battery` | Total Energy Discharge Battery | Lifetime energy drawn from the battery | kWh | uint32 | x0.1 | 60 s | on |
 | 0x0124 | `total_energy_charge_battery_from_grid` | Total Energy Charge Battery from Grid | Lifetime energy used to charge the battery from the grid | kWh | uint32 | x0.1 | 60 s | on |
 | 0x043E | `total_energy_from_pv` | Total Energy from PV | Lifetime total PV energy generated | kWh | uint32 | x0.1 | 60 s | on |
+
+`0x0092–0x0093` is opt-in: it is not polled until its entity is enabled, and it is read separately from existing blocks. The 60-second interval follows the configured polling multiplier, including after failed attempts. Unsupported or malformed responses make this counter unknown without invalidating `0x0090` or other existing sensor readings. A slow optional read can delay the shared poll cycle while enabled.
+
+AlphaESS's register table describes `0x0090` as energy fed to grid (PV) and `0x0092` as energy consumed from grid (PV). Reports in [issue #16](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues/16) and [upstream #25](https://github.com/senalse/ha-alphaess-modbus/issues/25) identify `0x0092` as production on their AC-coupled systems. The neutral sensor name preserves that distinction pending hardware comparison; existing `0x0090` identity and mapping remain unchanged. See the [manufacturer register table](https://projects.hillviewlodge.ie/_alphaess/AlphaESS-HouseholdModbusRegisterParameterList.pdf), PV Meter Running Data.
 
 ### Faults & Warnings
 

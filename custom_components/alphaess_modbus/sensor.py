@@ -200,6 +200,14 @@ class AlphaESSSensor(CoordinatorEntity[AlphaESSCoordinator], SensorEntity):
         self._attr_entity_registry_enabled_default = reg.enabled_by_default
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, entry.entry_id)})
 
+    async def async_added_to_hass(self):
+        await super().async_added_to_hass()
+        if self._reg.optional_read:
+            self.coordinator.optional_poll_keys.add(self._reg.key)
+            self.async_on_remove(
+                lambda: self.coordinator.optional_poll_keys.discard(self._reg.key)
+            )
+
     @property
     def native_value(self):
         if not self.coordinator.data:

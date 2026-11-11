@@ -112,6 +112,8 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._entry_id = config_entry.entry_id
         self.client = client
         self._last_polled: dict[str, float] = {}
+        self.optional_poll_keys: set[str] = set()
+        self._optional_last_attempt: dict[str, float] = {}
         self.house_load_sample = HouseLoadSample()
         # Caches for number/select entity values — populated by those entities
         # so switch.py can read them without going through hass.states.
@@ -140,7 +142,12 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return self.selects.get(key)
 
     def _is_due(self, reg: ModbusSensorDef) -> bool:
-        last = self._last_polled.get(reg.key, 0.0)
+        if reg.optional_read:
+            if reg.key not in getattr(self, "optional_poll_keys", set()):
+                return False
+            last = self._optional_last_attempt.get(reg.key, 0.0)
+        else:
+            last = self._last_polled.get(reg.key, 0.0)
         interval = reg.scan_interval * self._scan_multiplier
         return (time.monotonic() - last) >= interval
 
@@ -153,7 +160,8 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return data
 
         string_regs = [r for r in due if r.data_type == "string"]
-        numeric_regs = [r for r in due if r.data_type != "string"]
+        numeric_regs = [r for r in due if r.data_type != "string" and not r.optional_read]
+        optional_regs = [r for r in due if r.optional_read]
         errors: list[str] = []
         errors_this_cycle = 0
         failed_keys: set[str] = set()
@@ -215,6 +223,22 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         if errors and not data:
             raise UpdateFailed(f"All reads failed: {errors}")
+
+        # Opt-in counters must not extend an existing block or consume its error
+        # budget. A rejected optional address leaves all existing reads intact.
+        for reg in optional_regs:
+            if reg.key not in self.optional_poll_keys:
+                continue
+            try:
+                raw = await self.client.read_block(reg.address, _reg_width(reg))
+                data[reg.key] = _decode_block(reg, raw, 0)
+                self._last_polled[reg.key] = time.monotonic()
+            except (ModbusException, IndexError, ValueError, TypeError) as err:
+                data.pop(reg.key, None)
+                _LOGGER.debug("Optional read error for %s: %s", reg.key, err)
+            finally:
+                # Failed reads also wait a full configured interval before retry.
+                self._optional_last_attempt[reg.key] = time.monotonic()
 
         # Allow five configured poll intervals, preserving the existing normal /
         # fast-mode tolerance. Slow polling must not expire healthy cached data

@@ -59,7 +59,7 @@ This project maintains the integration and selectively adopts useful HA-side imp
 
 ### Sensors and feature guides
 
-The integration adds passive sensors using data already read by the integration. They do not add register reads or writes, change polling, or replace existing entities and controls.
+The following derived sensors use data already read by the integration. They do not add register reads or writes, change polling, or replace existing entities and controls.
 
 | Sensor | Purpose and limitations |
 | --- | --- |
@@ -81,6 +81,14 @@ Energy estimates can have gaps and do not automatically replace existing helpers
 [Optional Peak Shaving](docs/peak-shaving.md) uses existing dispatch controls when explicitly enabled. It is **off by default and after restart**, simulation-tested rather than hardware-tested, and cannot guarantee a hard import cap.
 
 See the [feature comparison](docs/hillview-parity.md) for supported features and differences.
+
+### Optional AC PV meter counter (v1.21.4b1 beta)
+
+[Issue #16](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues/16) reports AC-coupled PV production accumulating in `0x0092` rather than the existing `0x0090` counter. The beta adds **PV Meter Energy (0x0092)** (`total_energy_pv_meter_0092`) with a separate identity. It is **disabled and not polled by default**. Existing counters, daily calculations and inverter controls are unchanged.
+
+To test it, find the disabled sensor under the AlphaESS device's entities and enable it. **Home Assistant can reload the integration when an entity is enabled; do this while no dispatch is active.** The new sensor then reads only `0x0092–0x0093`, once per 60 seconds in normal polling mode (adjusted by the configured polling multiplier). It uses the existing shared Modbus connection, adds no writes, and is read separately from existing blocks. A failed read makes only the new counter unknown and waits a full interval before retrying. A slow or timed-out optional read can still delay a poll cycle while enabled.
+
+AlphaESS documents `0x0090` as energy fed to grid (PV) and `0x0092` as energy consumed from grid (PV). Some AC-coupled installations report production in `0x0092`; the physical direction needs validation. Compare each counter's **increase over the same daylight and overnight periods** with integrated AC PV meter power and the PV inverter's own energy reading, if available. Do not compare lifetime totals against a daily total, add the new counter to existing PV energy totals, or select it as an Energy dashboard source until its meaning is confirmed. Neither lifetime PV-meter counter feeds the current daily PV or accumulated house-load calculation.
 
 ### Validation
 
