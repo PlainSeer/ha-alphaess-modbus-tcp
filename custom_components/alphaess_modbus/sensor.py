@@ -27,6 +27,7 @@ from .coordinator import AlphaESSCoordinator
 from .house_energy import AlphaESSHouseEnergySensor
 from .house_load_daily import AlphaESSHouseLoadDailySensor
 from .house_load import house_load_sample, pv_production
+from .house_load_comparison import AlphaESSHouseLoadComparisonSensor, COMPARISONS
 
 
 @dataclass
@@ -146,6 +147,8 @@ async def async_setup_entry(
         AlphaESSCalculatedSensor(coordinator, entry, defn) for defn in CALCULATED_SENSORS
     ]
     entities += calculated
+    entities += [AlphaESSHouseLoadComparisonSensor(coordinator, entry, *definition)
+                 for definition in COMPARISONS]
     sources = {entity._defn.key: entity for entity in calculated}
     entities.append(AlphaESSHouseLoadDailySensor(
         coordinator, entry, sources["current_house_load"]

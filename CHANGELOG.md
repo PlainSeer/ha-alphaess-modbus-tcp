@@ -1,5 +1,13 @@
 # Changelog
 
+### v1.21.4b2 — Optional house-load comparison sensors (beta)
+
+- Related to [issue #10](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues/10): add separate **House Load Median 5 (Comparison)** and **House Load Battery Step (Comparison)** diagnostic power sensors, both disabled by default.
+- Use existing completed power polls only, without additional Modbus requests or updates to shared source/control state. Preserve existing house-load sensors, filtered sensors, accumulated totals and dispatch logic.
+- Bound median history to ten seconds and at most five accepted samples, using an odd-sized window during warm-up or slow polling. Bound battery-step estimates to two fresh samples or four seconds, whichever comes first. Reset across missing/stale input, mode changes, long gaps and restart; entity-only timers expire estimates without triggering controller updates.
+- Both experiments can suppress genuine short loads, including battery-supplied appliance loads. They are not verified consumption measurements or recommended control inputs. Energy comparisons remain offline; no experimental energy totals are added.
+- Retain v1.21.4b1's optional PV meter counter, disabled and unpolled by default. Enabling disabled entities can reload the integration in Home Assistant; enable test sensors while no dispatch is active.
+
 ### v1.21.4b1 — Optional AC PV meter energy counter (beta)
 
 - Related to [issue #16](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues/16): add a separate `PV Meter Energy (0x0092)` lifetime sensor, using an unsigned 32-bit counter at 0.01 kWh per count.
