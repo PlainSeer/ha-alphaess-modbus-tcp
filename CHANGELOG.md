@@ -1,5 +1,12 @@
 # Changelog
 
+### v1.21.4b1 — Optional AC PV meter energy counter (beta)
+
+- Related to [issue #16](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues/16): add a separate `PV Meter Energy (0x0092)` lifetime sensor, using an unsigned 32-bit counter at 0.01 kWh per count.
+- Disable the new sensor and its polling by default. When enabled, read it separately at the configured 60-second cadence so an unsupported address cannot invalidate the existing `0x0090` counter. Failed optional reads report unknown and wait until the next scheduled attempt.
+- Preserve existing sensor identities, history, house-load/daily-energy calculations and inverter controls. Document the register directions and request daylight/overnight comparisons before assigning a universal production label. No issue #10 filtering changes are included.
+- Enabling a disabled entity can reload the integration in Home Assistant; enable this test sensor while no dispatch is active.
+
 ### v1.21.3 — House-load consistency and daily energy reliability
 
 - Promote v1.21.3b3 to stable with the same runtime code.

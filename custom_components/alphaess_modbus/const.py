@@ -40,6 +40,7 @@ class ModbusSensorDef:
     enabled_by_default: bool = True
     description: str = ""
     group: str = ""
+    optional_read: bool = False  # Poll separately, only while its entity is enabled.
 
 
 @dataclass
@@ -385,6 +386,12 @@ SENSOR_REGISTERS: list[ModbusSensorDef] = [
                     0x0090, "uint32", unit="kWh", device_class="energy",
                     state_class="total_increasing", scale=0.01, precision=2, scan_interval=60,
                     description="Lifetime energy exported from PV, measured at the AC PV meter",
+                    group="Energy Totals"),
+    ModbusSensorDef("total_energy_pv_meter_0092", "PV Meter Energy (0x0092)",
+                    0x0092, "uint32", unit="kWh", device_class="energy",
+                    state_class="total_increasing", scale=0.01, precision=2, scan_interval=60,
+                    enabled_by_default=False, optional_read=True,
+                    description="Opposite-direction AC PV meter lifetime counter; documented as consumption from grid (PV), reported as PV production on some AC-coupled systems; validate before use",
                     group="Energy Totals"),
     ModbusSensorDef("total_energy_charge_battery", "Total Energy Charge Battery",
                     0x0120, "uint32", unit="kWh", device_class="energy",
