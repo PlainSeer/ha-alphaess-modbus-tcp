@@ -6,11 +6,20 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 
 from .config_flow import CONF_SLAVE_ID
-from .const import DOMAIN, PLATFORMS
+from .const import (
+    DISPATCH_PV_SWITCH_ADDR,
+    DISPATCH_START_ADDR,
+    DOMAIN,
+    NUMBER_REGISTERS,
+    PLATFORMS,
+    SELECT_REGISTERS,
+    TIME_REGISTERS,
+)
 from .coordinator import AlphaESSCoordinator
 from .modbus_client import AlphaESSModbusClient
 from .dashboard_options import CONF_MANAGE_DASHBOARD
@@ -18,7 +27,15 @@ from .dashboard_options import CONF_MANAGE_DASHBOARD
 CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 SERVICE_WRITE_REGISTER = "write_register"
+# Expose only registers used by supported charge, discharge and export controls.
+# Clock, grid-protection and reset registers are outside this public raw action.
+_RAW_WRITE_ADDRESSES = {
+    *(reg.address for reg in (*NUMBER_REGISTERS, *SELECT_REGISTERS) if reg.address is not None),
+    *(address for reg in TIME_REGISTERS for address in (reg.hour_address, reg.minute_address)),
+    *range(DISPATCH_START_ADDR, DISPATCH_PV_SWITCH_ADDR + 1),
+}
 SERVICE_WRITE_REGISTER_SCHEMA = vol.Schema({
+    vol.Optional("config_entry_id"): cv.string,
     vol.Required("address"): vol.All(vol.Coerce(int), vol.Range(min=0, max=65535)),
     vol.Required("value"): vol.All(vol.Coerce(int), vol.Range(min=0, max=65535)),
 })
@@ -64,6 +81,23 @@ async def async_setup(hass: HomeAssistant, config: dict) -> bool:
     return True
 
 
+async def _async_write_register_service(hass: HomeAssistant, call: ServiceCall) -> None:
+    address = call.data["address"]
+    if address not in _RAW_WRITE_ADDRESSES:
+        raise ServiceValidationError(f"Raw writes to register 0x{address:04X} are not supported.")
+
+    coordinators = {
+        key: item for key, item in hass.data.get(DOMAIN, {}).items()
+        if isinstance(item, AlphaESSCoordinator)
+    }
+    entry_id = call.data.get("config_entry_id")
+    if entry_id is None and len(coordinators) == 1:
+        entry_id = next(iter(coordinators))
+    if entry_id not in coordinators or coordinators[entry_id]._unloading:
+        raise ServiceValidationError("Specify the config_entry_id of a loaded AlphaESS inverter.")
+    await coordinators[entry_id].async_write_raw(address, call.data["value"])
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from homeassistant.exceptions import ConfigEntryNotReady
 
@@ -96,19 +130,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = coordinator
 
     if not hass.services.has_service(DOMAIN, SERVICE_WRITE_REGISTER):
-        async def _handle_write_register(call: ServiceCall) -> None:
-            address: int = call.data["address"]
-            value: int = call.data["value"]
-            # hass.data[DOMAIN] also holds non-coordinator entries (e.g. the
-            # per-entry switches map), so only call coordinators.
-            for obj in list(hass.data[DOMAIN].values()):
-                if isinstance(obj, AlphaESSCoordinator):
-                    await obj.async_write_raw(address, value)
+        async def handle_write_register(call: ServiceCall) -> None:
+            await _async_write_register_service(hass, call)
 
         hass.services.async_register(
             DOMAIN,
             SERVICE_WRITE_REGISTER,
-            _handle_write_register,
+            handle_write_register,
             schema=SERVICE_WRITE_REGISTER_SCHEMA,
         )
 
