@@ -40,16 +40,19 @@ BUTTON_DEFS = [
     {
         "key": "restart_pcs",
         "name": "Restart PCS",
+        "enabled_by_default": False,
         "icon": "mdi:restart",
     },
     {
         "key": "restart_ems",
         "name": "Restart EMS",
+        "enabled_by_default": False,
         "icon": "mdi:restart",
     },
     {
         "key": "reset_energy_totals",
         "name": "Reset Energy Totals",
+        "enabled_by_default": False,
         "icon": "mdi:counter",
     },
 ]
@@ -80,6 +83,7 @@ class AlphaESSButton(ButtonEntity):
         self._attr_name = definition["name"]
         self._attr_translation_key = self._key
         self._attr_icon = definition["icon"]
+        self._attr_entity_registry_enabled_default = definition.get("enabled_by_default", True)
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, entry.entry_id)})
 
     async def async_press(self, **kwargs: Any) -> None:

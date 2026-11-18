@@ -952,6 +952,20 @@ NUMBER_REGISTERS: list[ModbusNumberDef] = [
 # ---------------------------------------------------------------------------
 # SELECT REGISTERS (writable dropdowns)
 # ---------------------------------------------------------------------------
+INVERTER_AC_LIMIT = "inverter_ac_limit"
+INVERTER_AC_LIMIT_OPTIONS = {
+    "3 kW": 3000,
+    "4 kW": 4000,
+    "4.6 kW": 4600,
+    "5 kW": 5000,
+    "6 kW": 6000,
+    "8 kW": 8000,
+    "10 kW": 10000,
+    "12 kW": 12000,
+    "15 kW": 15000,
+    "20 kW": 20000,
+}
+
 SELECT_REGISTERS: list[ModbusSelectDef] = [
     ModbusSelectDef(
         "charging_discharging_settings",
@@ -988,12 +1002,11 @@ SELECT_REGISTERS: list[ModbusSelectDef] = [
         description="Selects the control algorithm used when a dispatch switch is active",
     ),
     ModbusSelectDef(
-        "inverter_ac_limit",
+        INVERTER_AC_LIMIT,
         "Inverter AC Limit",
-        address=None,  # stored in config entry, used in excess export calculation
-        options=["3 kW", "4 kW", "4.6 kW", "5 kW", "6 kW",
-                 "8 kW", "10 kW", "12 kW", "15 kW", "20 kW"],
-        values=[3000, 4000, 4600, 5000, 6000, 8000, 10000, 12000, 15000, 20000],
+        address=None,
+        options=list(INVERTER_AC_LIMIT_OPTIONS),
+        values=list(INVERTER_AC_LIMIT_OPTIONS.values()),
         icon="mdi:transmission-tower",
         description="Inverter AC output rating; used to calculate battery power needed for Force Export and Excess Export",
     ),

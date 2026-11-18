@@ -568,20 +568,17 @@ The inverter's Modbus TCP port is `502` and the slave ID is `85` by default. The
 
 ## Advanced: Writing Registers Directly
 
-The `alphaess_modbus.write_register` service writes a raw integer value to any Modbus holding register using FC6 (Write Single Register). It is intended for use from Developer Tools or automations by advanced users and developers.
+The `alphaess_modbus.write_register` action sends one unsigned 16-bit value via FC6 to one loaded AlphaESS inverter. Prefer the integration's entities for normal inverter control.
 
-> **Warning:** Writing incorrect values to grid safety registers (overvoltage, undervoltage, frequency protection) or inverter configuration registers can cause the inverter to trip or behave unexpectedly. Use with care and consult the AlphaESS Modbus register documentation before writing to any register you are not certain about. This service is for developers only.
+The action accepts these decimal-address equivalents of the Modbus register map:
 
-```yaml
-service: alphaess_modbus.write_register
-data:
-  address: 2052    # register address as a decimal integer (hex: 0x0804)
-  value: 400       # raw integer to write (no scale or offset applied)
-```
+- `0x0800` (2048), maximum feed to grid
+- `0x084F` through `0x0861` (2127–2145), charge/discharge settings, SOC limits and schedule times
+- `0x0880` through `0x088A` (2176–2186), dispatch registers
 
-The address must be provided as a decimal integer. Convert hex addresses from the register documentation using a calculator (for example, 0x0804 = 2052). The value is written as-is with no scale or offset applied.
+Use `config_entry_id` to select the inverter. You may omit it when exactly one AlphaESS inverter is loaded. Raw values use the register's own units. An accepted dispatch register write relinquishes this integration's current local dispatch session. Use **Dispatch Reset** or **Sync Dispatch State** for the corresponding recovery procedures.
 
-If two inverters are configured, the service writes the same value to all instances.
+The dedicated **Synchronise Date & Time** button sets the inverter clock. **Restart PCS**, **Restart EMS** and **Reset Energy Totals** are disabled by default when their entity registry entries are created. Resetting energy totals is irreversible.
 
 ---
 

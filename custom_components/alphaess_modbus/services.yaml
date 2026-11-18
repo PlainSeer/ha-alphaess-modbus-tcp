@@ -1,17 +1,21 @@
 write_register:
   name: Write Register
   description: >
-    Write a raw integer value to a single Modbus holding register on the inverter
-    using FC6 (Write Single Register). No scale or offset is applied. For developers
-    and advanced users only.
+    Write a raw value to a supported operational register on one AlphaESS inverter.
+    For advanced use. Prefer the inverter entities for charge, discharge and export.
   fields:
+    config_entry_id:
+      name: AlphaESS configuration entry ID
+      description: Required when more than one AlphaESS inverter is loaded.
+      selector:
+        text: {}
     address:
       name: Address
       description: >
-        Register address as a decimal integer (0 to 65535). Convert hex addresses
-        from the register documentation using a calculator, e.g. 0x0804 = 2052.
+        Supported register address as a decimal integer. For example, 0x0800
+        (maximum feed to grid) is 2048.
       required: true
-      example: 2052
+      example: 2048
       selector:
         number:
           min: 0
@@ -23,7 +27,7 @@ write_register:
         Raw integer to write (0 to 65535). No scale or offset is applied; provide
         the exact register value as documented.
       required: true
-      example: 400
+      example: 100
       selector:
         number:
           min: 0

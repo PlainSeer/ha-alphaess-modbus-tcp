@@ -1,5 +1,12 @@
 # Changelog
 
+### v1.21.4b3 — AC-limit persistence and control safeguards (beta)
+
+- Save the Inverter AC Limit per configuration entry and seed the coordinator from it before entity setup. When upgrading an existing entry, import a valid restored select value on first load.
+- Encode the three inverter clock words as packed BCD using the Home Assistant time zone.
+- Default-disable newly registered Restart PCS, Restart EMS and Reset Energy Totals buttons. Preserve existing registry settings.
+- Limit the public raw-write action to operational registers and one loaded inverter. Require a configuration entry ID when several inverters are loaded.
+
 ### v1.21.4b2 — Optional house-load comparison sensors (beta)
 
 - Related to [issue #10](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues/10): add separate **House Load Median 5 (Comparison)** and **House Load Battery Step (Comparison)** diagnostic power sensors, both disabled by default.

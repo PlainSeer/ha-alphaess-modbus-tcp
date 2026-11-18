@@ -7,12 +7,16 @@ from typing import Any, Callable
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
+from homeassistant.util import dt as dt_util
 from pymodbus.exceptions import ModbusException
 
 from .const import (
     DOMAIN,
     SENSOR_REGISTERS,
+    INVERTER_AC_LIMIT,
+    INVERTER_AC_LIMIT_OPTIONS,
     ModbusSensorDef,
     B3_SCALE_OVERRIDES,
     DISPATCH_FLOW_DIRECTION,
@@ -119,7 +123,10 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # so switch.py can read them without going through hass.states.
         self.numbers: dict[str, float] = {}
         self.selects: dict[str, str] = {}
-        self.ac_limit_w: int = 20000  # updated by inverter_ac_limit select entity
+        saved_ac_limit = config_entry.data.get(INVERTER_AC_LIMIT)
+        if saved_ac_limit not in INVERTER_AC_LIMIT_OPTIONS:
+            saved_ac_limit = next(iter(INVERTER_AC_LIMIT_OPTIONS))
+        self.set_ac_limit(saved_ac_limit)
         self.ee_paused: bool = False
         self.fi_paused: bool = False
         self.dispatch_started_at: datetime | None = None
@@ -134,6 +141,10 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "slow_multiplier" if mode == "slow" else "fast_multiplier", 3.0 if mode == "slow" else 0.5
         )) if mode != "normal" else 1.0
         self.update_interval = timedelta(seconds=self._scan_multiplier if mode == "fast" else 2)
+
+    def set_ac_limit(self, option: str) -> None:
+        self.selects[INVERTER_AC_LIMIT] = option
+        self.ac_limit_w = INVERTER_AC_LIMIT_OPTIONS[option]
 
     def get_number(self, key: str) -> float | None:
         return self.numbers.get(key)
@@ -324,14 +335,12 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self.client.write_registers(address, values)
 
     async def async_sync_datetime(self) -> None:
-        import datetime
-        now = datetime.datetime.now()
-        yy = now.year - 2000
-        # BCD-encoded uint16: each byte holds a decimal field packed as hex digits,
-        # e.g. year=26, month=5 -> 0x2605. Confirmed correct on this inverter;
-        # raw binary encoding (year * 256 + month) produces wrong values.
-        yymm = int(f"{yy:02x}{now.month:02x}", 16)
-        ddhh = int(f"{now.day:02x}{now.hour:02x}", 16)
-        mmss = int(f"{now.minute:02x}{now.second:02x}", 16)
+        now = dt_util.now(dt_util.get_time_zone(self.hass.config.time_zone))
+        if not 2000 <= now.year <= 2099:
+            raise ServiceValidationError("The AlphaESS clock supports years 2000 to 2099.")
+        # Interpret the decimal digits as hexadecimal nibbles to pack BCD.
+        yymm = int(f"{now.year % 100:02d}{now.month:02d}", 16)
+        ddhh = int(f"{now.day:02d}{now.hour:02d}", 16)
+        mmss = int(f"{now.minute:02d}{now.second:02d}", 16)
         await self.client.write_registers(0x0740, [yymm, ddhh, mmss])
         await self.async_request_refresh()

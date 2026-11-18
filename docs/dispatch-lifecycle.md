@@ -165,11 +165,12 @@ while Reset is pending. After Reset completes or raises, explicit starts are
 allowed again. The stop register block is unchanged, and verification errors
 continue to abort HA recovery scripts using normal error handling.
 
-The raw `write_register` service remains an explicit register write. A raw write
-within `0x0880..0x088A` first relinquishes local dispatch sessions without adding
-an inverter reset, so their old callbacks cannot reclaim that command. Unrelated
-raw register writes do not stop dispatch sessions. Known PV preference writes
-update the local consistency snapshot.
+The public `write_register` action accepts only supported operational registers
+and targets one inverter. An accepted raw write within `0x0880..0x088A`
+relinquishes local dispatch sessions on that inverter without issuing a reset,
+so their old callbacks cannot reclaim the command. Other permitted raw writes
+leave dispatch sessions active. Known PV preference writes update the local
+consistency snapshot.
 
 ## Compatibility validation
 
