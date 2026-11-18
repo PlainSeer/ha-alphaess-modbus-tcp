@@ -1,5 +1,11 @@
 # Changelog
 
+### Unreleased
+
+- Backport upstream connection reconfiguration and the Marketplace category.
+- Restore the four Hold preferences across reloads. Dispatch switches still require a new start.
+- Keep Force Export and Force Import active when zero battery power is legitimate. Stop at or near the configured SoC when Hold is off. Keep the existing inverter-side SoC target.
+
 ### v1.21.4b3 — AC-limit persistence and control safeguards (beta)
 
 - Save the Inverter AC Limit per configuration entry and seed the coordinator from it before entity setup. When upgrading an existing entry, import a valid restored select value on first load.

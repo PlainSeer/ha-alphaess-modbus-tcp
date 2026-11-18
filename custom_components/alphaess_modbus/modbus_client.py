@@ -181,6 +181,15 @@ class AlphaESSModbusClient:
             )
             return list(result.registers)
 
+    async def probe(self, slave_id: int) -> None:
+        """Test a unit ID under the existing transaction lock."""
+        async with self._lock:
+            await self._ensure_connected()
+            await self._request(
+                lambda: self._client.read_holding_registers(0x0102, count=1, **{_SLAVE_KWARG: slave_id}),
+                f"probing unit {slave_id}",
+            )
+
     async def read_register(self, address: int, data_type: str, count: int = 1) -> Any:
         async with self._lock:
             return await self._read(address, data_type, count)
