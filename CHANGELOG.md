@@ -1,6 +1,6 @@
 # Changelog
 
-### Unreleased
+### v1.21.4b4 — Upstream connection and dispatch improvements (beta)
 
 - Backport upstream connection reconfiguration and the Marketplace category.
 - Restore the four Hold preferences across reloads. Dispatch switches still require a new start.
