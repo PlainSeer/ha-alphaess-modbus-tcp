@@ -136,7 +136,7 @@ retry semantics are documented in [Dispatch lifecycle](docs/dispatch-lifecycle.m
 - AlphaESS inverter with **Modbus TCP enabled** on port 502
 - Inverter reachable on your local network (wired LAN or powerline recommended)
 - Home Assistant **2024.10 or newer**
-- HACS installed
+- HACS is needed for the HACS installation method. Home Assistant 2026.11 and later also include Marketplace.
 
 ---
 
@@ -152,6 +152,10 @@ Moving from the previous PlainSeer repository? Read the [HACS migration guide](d
 4. Click **Download** on the AlphaESS Modbus TCP card
 5. Restart Home Assistant
 
+### Via Home Assistant Marketplace
+
+On Home Assistant 2026.11 or later, open Marketplace and select AlphaESS Modbus TCP. Verify the listing links to the PlainSeer repository before installing.
+
 ### Manual
 
 1. Download the latest release from the [Releases page](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/releases)
@@ -161,6 +165,8 @@ Moving from the previous PlainSeer repository? Read the [HACS migration guide](d
 ---
 
 ## Setup
+
+To change the inverter address, port or slave ID on Home Assistant 2024.11 or later, use **Reconfigure** in the AlphaESS integration entry menu. Change connection settings when dispatch is idle because a successful change reloads the entry.
 
 1. Go to **Settings → Devices & Services → Add Integration**
 2. Search for **AlphaESS Modbus TCP**

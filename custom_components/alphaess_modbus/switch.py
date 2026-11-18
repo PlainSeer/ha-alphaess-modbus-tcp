@@ -162,6 +162,8 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             # Persistent preference, not a dispatch. Default ON (PV enabled);
             # restore the last known state across restarts.
             self._is_on = True if state is None else state.state == "on"
+        elif self.switch_key in _HOLD_SWITCHES:
+            self._is_on = state is not None and state.state == "on"
         elif state and state.state == "on":
             self._is_on = False  # Don't auto-resume dispatch on restart
         self.async_on_remove(
@@ -278,7 +280,6 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                 if not self._is_on:
                     return
                 self._schedule_duration_off(duration_s)
-                self._start_battery_power_watcher("force_export_hold")
             elif self.switch_key == "force_import":
                 duration_min = self._num("force_import_duration", 120.0)
                 duration_s = int(duration_min * 60)
@@ -286,7 +287,6 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                     raise ValueError("Force import duration is 0 — set number.alphaess_inverter_force_import_duration to a non-zero value")
                 await self._start_force_import(duration_s)
                 self._schedule_duration_off(duration_s)
-                self._start_battery_power_watcher("force_import_hold")
             elif self.switch_key == "dispatch":
                 await self._start_dispatch()
             elif self.switch_key == "excess_export":
@@ -825,6 +825,37 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         self._is_on = True
         self.async_write_ha_state()
 
+    def _hold_enabled(self, hold_switch_key: str) -> bool:
+        switches = self.hass.data[DOMAIN].get(f"{self._entry.entry_id}_switches", {})
+        hold = switches.get(hold_switch_key)
+        return hold is not None and hold.is_on
+
+    def _check_servo_cutoff(self, data, *, cutoff: float, exporting: bool) -> bool:
+        """Keep legitimate zero-power sessions alive and stop near the SoC target."""
+        soc = data.get("soc_battery")
+        distance = None if soc is None else (float(soc) - cutoff if exporting else cutoff - float(soc))
+        if distance is not None and distance <= 0:
+            reached = True
+        else:
+            battery = data.get("power_battery")
+            command = self._acknowledged
+            commanded_w = abs(command[2] - 32000) if command is not None else 0
+            if distance is None or distance > 1 or commanded_w < 300 or battery is None or abs(float(battery)) > 50:
+                self._bp_near_zero_since = None
+                return False
+            now = time.monotonic()
+            if self._bp_near_zero_since is None:
+                self._bp_near_zero_since = now
+            reached = now - self._bp_near_zero_since >= 10
+
+        if reached and not self._hold_enabled(f"{self.switch_key}_hold"):
+            task = self._create_control_task(
+                self._automatic_stop(), name=f"alphaess_{self.switch_key}_soc_off"
+            )
+            self._pending_tasks.add(task)
+            task.add_done_callback(self._pending_tasks.discard)
+        return reached
+
     def _start_battery_power_watcher(self, hold_switch_key: str) -> None:
         """Watch power_battery and stop this switch when it stays within +-50 W for 10 s.
 
@@ -853,11 +884,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                 if self._bp_near_zero_since is None:
                     self._bp_near_zero_since = now
                 elif now - self._bp_near_zero_since >= 10:
-                    switches = self.hass.data[DOMAIN].get(
-                        f"{self._entry.entry_id}_switches", {}
-                    )
-                    hold_sw = switches.get(hold_switch_key)
-                    if hold_sw and hold_sw.is_on:
+                    if self._hold_enabled(hold_switch_key):
                         return
                     self._bp_near_zero_since = None
                     unsub = self._soc_unsub
@@ -954,7 +981,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         d = self._coordinator.data or {}
         soc = d.get("soc_battery")
         cutoff_soc = self._num("force_export_cutoff_soc", 4.0)
-        if soc is not None and float(soc) <= cutoff_soc:
+        if soc is not None and float(soc) <= cutoff_soc and not self._hold_enabled("force_export_hold"):
             await self._async_turn_off_silent(automatic=True)
             return
         # Seed the servo with the feed-forward estimate. At turn-on the battery is not
@@ -988,15 +1015,8 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             if not self._is_on or self._suspended or generation != self._control_generation:
                 return
             d = self._coordinator.data or {}
-            soc = d.get("soc_battery")
             cutoff_soc = self._num("force_export_cutoff_soc", 4.0)
-            if soc is not None and float(soc) <= cutoff_soc:
-                task = self._create_control_task(
-                    self._automatic_stop(),
-                    name=f"alphaess_{self.switch_key}_soc_off",
-                )
-                self._pending_tasks.add(task)
-                task.add_done_callback(self._pending_tasks.discard)
+            if self._check_servo_cutoff(d, cutoff=cutoff_soc, exporting=True):
                 return
             if house_load_sample(self._coordinator).raw is None:
                 return
@@ -1243,9 +1263,10 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         def _check() -> None:
             if not self._is_on or self._suspended or generation != self._control_generation:
                 return
-            if self._coordinator.fi_paused:
-                return
             d = self._coordinator.data or {}
+            cutoff_soc = self._num("force_import_cutoff_soc", 100.0)
+            if self._check_servo_cutoff(d, cutoff=cutoff_soc, exporting=False) or self._coordinator.fi_paused:
+                return
             if house_load_sample(self._coordinator).raw is None:
                 return
             grid = d.get("power_grid")
