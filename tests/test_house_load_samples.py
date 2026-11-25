@@ -162,7 +162,8 @@ def test_daily_expiry_followed_by_outage_does_not_extrapolate():
 
 def test_partial_block_failure_invalidates_the_sample_despite_cached_values():
     async def run():
-        c = coordinator()
+        c = object.__new__(AlphaESSCoordinator)
+        c.__dict__.update(vars(coordinator()), _block_splits=set(), _illegal_replies={}, _unsupported_until={})
         c._scan_multiplier, c._model_variant = 1, "standard"
         grid = next(r for r in SENSOR_REGISTERS if r.key == "power_grid")
         c._is_due = lambda reg: True

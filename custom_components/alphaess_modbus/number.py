@@ -28,6 +28,7 @@ DISPATCH_PARAM_KEYS = {
     "dispatch_cutoff_soc",
     "dispatch_duration",
     "dispatch_power",
+    "excess_export_duration",
     "peak_shaving_power",
     "peak_shaving_cutoff_soc",
 }
@@ -39,6 +40,7 @@ _PARAM_SWITCH = {
     "force_export": "force_export",
     "force_import": "force_import",
     "dispatch": "dispatch",
+    "excess_export": "excess_export",
     "peak_shaving": "peak_shaving",
 }
 
@@ -151,4 +153,7 @@ class AlphaESSNumber(RestoreEntity, NumberEntity):
             # A power or cutoff-SoC change only updates the setpoint and must
             # leave the running countdown untouched (issue #14).
             reset_timer = self._reg.key.endswith("_duration")
-            await sw.async_apply_param_change(reset_timer=reset_timer)
+            if switch_key in ("force_export", "force_import", "excess_export"):
+                await sw.async_apply_param_change(reset_timer=reset_timer, param_key=self._reg.key)
+            else:
+                await sw.async_apply_param_change(reset_timer=reset_timer)

@@ -7,20 +7,14 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from .const import DOMAIN, SELECT_REGISTERS, ModbusSelectDef
+from .const import (
+    DOMAIN,
+    INVERTER_AC_LIMIT,
+    INVERTER_AC_LIMIT_OPTIONS,
+    SELECT_REGISTERS,
+    ModbusSelectDef,
+)
 from .coordinator import AlphaESSCoordinator
-
-# inverter_ac_limit has no Modbus address — it's a local config value used by
-# the excess export switch to calculate dispatch power.
-LOCAL_ONLY_SELECTS = {"inverter_ac_limit"}
-
-
-def _parse_ac_limit_w(option: str) -> int:
-    """Convert '5 kW' -> 5000, '4.6 kW' -> 4600, etc."""
-    try:
-        return int(float(option.split()[0]) * 1000)
-    except (ValueError, IndexError):
-        return 20000
 
 
 async def async_setup_entry(
@@ -54,14 +48,18 @@ class AlphaESSSelect(RestoreEntity, SelectEntity):
         self._current_option: str | None = reg.options[0] if reg.options else None
 
     async def async_added_to_hass(self) -> None:
-        state = await self.async_get_last_state()
-        if state and state.state in self._reg.options:
-            self._current_option = state.state
-        # Seed the coordinator cache so switch.py can read dispatch_mode immediately.
-        if self._current_option:
-            self._coordinator.selects[self._reg.key] = self._current_option
-            if self._reg.key == "inverter_ac_limit":
-                self._coordinator.ac_limit_w = _parse_ac_limit_w(self._current_option)
+        if self._reg.key == INVERTER_AC_LIMIT:
+            if self._entry.data.get(INVERTER_AC_LIMIT) not in INVERTER_AC_LIMIT_OPTIONS:
+                state = await self.async_get_last_state()
+                if state and state.state in INVERTER_AC_LIMIT_OPTIONS:
+                    self._set_ac_limit(state.state)
+                    self._coordinator.async_update_listeners()
+        else:
+            state = await self.async_get_last_state()
+            if state and state.state in self._reg.options:
+                self._current_option = state.state
+            if self._current_option:
+                self._coordinator.selects[self._reg.key] = self._current_option
         self.async_on_remove(
             self._coordinator.async_add_listener(self.async_write_ha_state)
         )
@@ -72,6 +70,8 @@ class AlphaESSSelect(RestoreEntity, SelectEntity):
 
     @property
     def current_option(self) -> str | None:
+        if self._reg.key == INVERTER_AC_LIMIT:
+            return self._coordinator.get_select(INVERTER_AC_LIMIT)
         # For register-backed selects, prefer the live coordinator value so the
         # dropdown reflects the actual inverter state rather than the last HA state.
         if self._reg.sensor_key and self._coordinator.data:
@@ -84,16 +84,21 @@ class AlphaESSSelect(RestoreEntity, SelectEntity):
                     pass
         return self._current_option
 
+    def _set_ac_limit(self, option: str) -> None:
+        self.hass.config_entries.async_update_entry(
+            self._entry, data={**self._entry.data, INVERTER_AC_LIMIT: option}
+        )
+        self._coordinator.set_ac_limit(option)
+
     async def async_select_option(self, option: str) -> None:
+        if self._reg.key == INVERTER_AC_LIMIT:
+            self._set_ac_limit(option)
+            self._coordinator.async_update_listeners()
+            return
+
         self._current_option = option
         self._coordinator.selects[self._reg.key] = option
-        if self._reg.key == "inverter_ac_limit":
-            self._coordinator.ac_limit_w = _parse_ac_limit_w(option)
-            self._coordinator.async_update_listeners()
         self.async_write_ha_state()
-
-        if self._reg.key in LOCAL_ONLY_SELECTS:
-            return
 
         idx = self._reg.options.index(option)
         value = self._reg.values[idx]

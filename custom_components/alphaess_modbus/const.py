@@ -40,6 +40,7 @@ class ModbusSensorDef:
     enabled_by_default: bool = True
     description: str = ""
     group: str = ""
+    optional_read: bool = False  # Poll separately, only while its entity is enabled.
 
 
 @dataclass
@@ -96,6 +97,11 @@ SENSOR_REGISTERS: list[ModbusSensorDef] = [
                     0x0435, "int16", unit="°C", device_class="temperature",
                     scale=0.1, precision=0, scan_interval=60,
                     description="Internal inverter temperature",
+                    group="System"),
+    ModbusSensorDef("system_mode", "System Mode",
+                    0x0805, "uint16", state_class=None, precision=0, scan_interval=60,
+                    enabled_by_default=False, optional_read=True,
+                    description="Configured inverter coupling: AC, DC or Hybrid",
                     group="System"),
     ModbusSensorDef("inverter_work_mode", "Inverter Work Mode",
                     0x0440, "int16", precision=0, scan_interval=5,
@@ -253,7 +259,7 @@ SENSOR_REGISTERS: list[ModbusSensorDef] = [
     ModbusSensorDef("power_battery", "Battery Power",
                     0x0126, "int16", unit="W", device_class="power",
                     scan_interval=1,
-                    description="Battery charge/discharge power; positive = charging, negative = discharging",
+                    description="Battery charge/discharge power; positive = discharging, negative = charging",
                     group="Battery Power"),
 
     # --- Power: inverter ---
@@ -384,7 +390,13 @@ SENSOR_REGISTERS: list[ModbusSensorDef] = [
     ModbusSensorDef("total_energy_feed_to_grid_pv", "Total Energy Feed to Grid (PV)",
                     0x0090, "uint32", unit="kWh", device_class="energy",
                     state_class="total_increasing", scale=0.01, precision=2, scan_interval=60,
-                    description="Lifetime energy exported from PV, measured at the AC PV meter",
+                    description="Legacy 0x0090 AC PV meter counter; validate the physical direction before using it as production",
+                    group="Energy Totals"),
+    ModbusSensorDef("total_energy_pv_meter_0092", "PV Meter Energy (0x0092)",
+                    0x0092, "uint32", unit="kWh", device_class="energy",
+                    state_class="total_increasing", scale=0.01, precision=2, scan_interval=60,
+                    enabled_by_default=False, optional_read=True,
+                    description="Opposite-direction AC PV meter lifetime counter; documented as consumption from grid (PV), reported as PV production on some AC-coupled systems; validate before use",
                     group="Energy Totals"),
     ModbusSensorDef("total_energy_charge_battery", "Total Energy Charge Battery",
                     0x0120, "uint32", unit="kWh", device_class="energy",
@@ -407,6 +419,18 @@ SENSOR_REGISTERS: list[ModbusSensorDef] = [
                     description="Lifetime total PV energy generated",
                     group="Energy Totals"),
 
+    ModbusSensorDef("pv_inverter_energy", "PV Inverter Energy",
+                    0x08D0, "uint32", unit="kWh", device_class="energy",
+                    state_class="total_increasing", scale=0.01, precision=2, scan_interval=60,
+                    enabled_by_default=False, optional_read=True,
+                    description="Lifetime energy of the AC-coupled PV inverter as totalled by the system",
+                    group="Energy Totals"),
+    ModbusSensorDef("pv_system_total_energy", "PV System Total Energy",
+                    0x08D2, "uint32", unit="kWh", device_class="energy",
+                    state_class="total_increasing", scale=0.01, precision=2, scan_interval=60,
+                    enabled_by_default=False, optional_read=True,
+                    description="Lifetime PV energy of the whole system (inverter strings plus AC-coupled PV inverter)",
+                    group="Energy Totals"),
     # --- Faults & warnings ---
     ModbusSensorDef("system_fault", "System Fault",
                     0x08D4, "uint32", precision=0, scan_interval=5, enabled_by_default=True,
@@ -625,7 +649,7 @@ SENSOR_REGISTERS: list[ModbusSensorDef] = [
     ModbusSensorDef("battery_current", "Battery Current",
                     0x0101, "int16", unit="A", device_class="current",
                     scale=0.1, precision=2, scan_interval=60,
-                    description="Battery pack current; positive = charging, negative = discharging",
+                    description="Battery pack current; positive = discharging, negative = charging",
                     group="Battery"),
     ModbusSensorDef("battery_min_cell_temp", "Battery Min Cell Temp",
                     0x010D, "uint16", unit="°C", device_class="temperature",
@@ -651,6 +675,48 @@ SENSOR_REGISTERS: list[ModbusSensorDef] = [
                     0x0127, "int16", unit="min", precision=0, scan_interval=60,
                     enabled_by_default=False,
                     description="BMS estimate of time to full charge or discharge",
+                    group="Battery"),
+    ModbusSensorDef("battery_impl_charge_soc", "Battery Implementation Charge SoC",
+                    0x0128, "uint16", unit="%", scale=0.1, precision=1, scan_interval=60,
+                    enabled_by_default=False, optional_read=True,
+                    description="Charge SoC window reported by the BMS (rated SoC minus UPS reserve); not populated on every model",
+                    group="Battery"),
+    ModbusSensorDef("battery_impl_discharge_soc", "Battery Implementation Discharge SoC",
+                    0x0129, "uint16", unit="%", scale=0.1, precision=1, scan_interval=60,
+                    enabled_by_default=False, optional_read=True,
+                    description="Discharge SoC window reported by the BMS (rated SoC minus UPS reserve); not populated on every model",
+                    group="Battery"),
+    ModbusSensorDef("battery_remaining_charge_soc", "Battery Remaining Charge SoC",
+                    0x012A, "uint16", unit="%", scale=0.1, precision=1, scan_interval=60,
+                    enabled_by_default=False, optional_read=True,
+                    description="SoC still available to charge (rated SoC minus remaining SoC); not populated on every model",
+                    group="Battery"),
+    ModbusSensorDef("battery_remaining_discharge_soc", "Battery Remaining Discharge SoC",
+                    0x012B, "uint16", unit="%", scale=0.1, precision=1, scan_interval=60,
+                    enabled_by_default=False, optional_read=True,
+                    description="SoC still available to discharge (remaining SoC minus UPS reserve); not populated on every model",
+                    group="Battery"),
+    ModbusSensorDef("battery_max_charge_power", "Battery Max Charge Power",
+                    0x012C, "uint16", unit="W", device_class="power", precision=0,
+                    scan_interval=10,
+                    enabled_by_default=False, optional_read=True,
+                    description="Maximum charge power the BMS allows at present",
+                    group="Battery"),
+    ModbusSensorDef("battery_max_discharge_power", "Battery Max Discharge Power",
+                    0x012D, "uint16", unit="W", device_class="power", precision=0,
+                    scan_interval=10,
+                    enabled_by_default=False, optional_read=True,
+                    description="Maximum discharge power the BMS allows at present",
+                    group="Battery"),
+    ModbusSensorDef("battery_soc_calibration", "Battery SoC Calibration",
+                    0x012F, "uint16", state_class=None, precision=0, scan_interval=10,
+                    enabled_by_default=False, optional_read=True,
+                    description="BMS SoC calibration flag; 1 = calibration enabled, 0 = disabled",
+                    group="Battery"),
+    ModbusSensorDef("battery_single_cut_error", "Battery Single Cut Error Code",
+                    0x0130, "uint16", state_class=None, precision=0, scan_interval=60,
+                    enabled_by_default=False, optional_read=True,
+                    description="BMS single cut error code; 0 = no error",
                     group="Battery"),
     ModbusSensorDef("battery_relay_status", "Battery Relay Status",
                     0x0104, "uint16", precision=0, scan_interval=60, enabled_by_default=False,
@@ -938,6 +1004,10 @@ NUMBER_REGISTERS: list[ModbusNumberDef] = [
                     min_value=0, max_value=20, step=0.1, unit="kW",
                     icon="mdi:flash", ac_limit_scaled=True,
                     description="Target grid import level for Force Import; the integration subtracts PV and adds house load to derive the battery charge value (dispatch parameter)"),
+    ModbusNumberDef("excess_export_duration", "Excess Export Duration",
+                    address=None, min_value=0, max_value=480, step=5, unit="min",
+                    icon="mdi:clock-time-eight-outline", default_value=0,
+                    description="Excess Export turns off after this many minutes; 0 runs until stopped"),
     # Charging/discharging period times are handled by the time platform (time.py)
     # using ModbusTimeDef entries in TIME_REGISTERS below.
 ]
@@ -945,6 +1015,20 @@ NUMBER_REGISTERS: list[ModbusNumberDef] = [
 # ---------------------------------------------------------------------------
 # SELECT REGISTERS (writable dropdowns)
 # ---------------------------------------------------------------------------
+INVERTER_AC_LIMIT = "inverter_ac_limit"
+INVERTER_AC_LIMIT_OPTIONS = {
+    "3 kW": 3000,
+    "4 kW": 4000,
+    "4.6 kW": 4600,
+    "5 kW": 5000,
+    "6 kW": 6000,
+    "8 kW": 8000,
+    "10 kW": 10000,
+    "12 kW": 12000,
+    "15 kW": 15000,
+    "20 kW": 20000,
+}
+
 SELECT_REGISTERS: list[ModbusSelectDef] = [
     ModbusSelectDef(
         "charging_discharging_settings",
@@ -981,12 +1065,11 @@ SELECT_REGISTERS: list[ModbusSelectDef] = [
         description="Selects the control algorithm used when a dispatch switch is active",
     ),
     ModbusSelectDef(
-        "inverter_ac_limit",
+        INVERTER_AC_LIMIT,
         "Inverter AC Limit",
-        address=None,  # stored in config entry, used in excess export calculation
-        options=["3 kW", "4 kW", "4.6 kW", "5 kW", "6 kW",
-                 "8 kW", "10 kW", "12 kW", "15 kW", "20 kW"],
-        values=[3000, 4000, 4600, 5000, 6000, 8000, 10000, 12000, 15000, 20000],
+        address=None,
+        options=list(INVERTER_AC_LIMIT_OPTIONS),
+        values=list(INVERTER_AC_LIMIT_OPTIONS.values()),
         icon="mdi:transmission-tower",
         description="Inverter AC output rating; used to calculate battery power needed for Force Export and Excess Export",
     ),

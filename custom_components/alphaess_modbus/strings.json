@@ -1,6 +1,14 @@
 {
   "config": {
     "step": {
+      "reconfigure": {
+        "title": "Reconfigure AlphaESS connection",
+        "data": {
+          "host": "Inverter IP Address",
+          "port": "Modbus Port",
+          "slave_id": "Slave ID"
+        }
+      },
       "user": {
         "title": "AlphaESS Modbus TCP",
         "description": "Connect to your AlphaESS inverter via Modbus TCP. Make sure the inverter is reachable on the local network.",
@@ -15,7 +23,8 @@
       "cannot_connect": "Cannot connect to the inverter. Check the IP address, port, and that Modbus TCP is enabled on the inverter."
     },
     "abort": {
-      "already_configured": "This inverter is already configured."
+      "already_configured": "This inverter is already configured.",
+      "reconfigure_successful": "Connection settings confirmed."
     }
   },
   "options": {
@@ -136,6 +145,9 @@
       "force_import_cutoff_soc": {
         "name": "Force Import Stop at SoC"
       },
+      "excess_export_duration": {
+        "name": "Excess Export Duration"
+      },
       "force_import_duration": {
         "name": "Force Import Duration"
       }
@@ -163,6 +175,9 @@
       },
       "force_export_countdown": {
         "name": "Force Export Countdown"
+      },
+      "excess_export_countdown": {
+        "name": "Excess Export Countdown"
       },
       "force_import_countdown": {
         "name": "Force Import Countdown"

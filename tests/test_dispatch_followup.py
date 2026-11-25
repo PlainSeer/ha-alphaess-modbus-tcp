@@ -301,6 +301,7 @@ def test_busy_servo_uses_latest_target_and_remaining_duration():
         s.c.numbers['force_export_duration'] = 480
         await sw.async_turn_on()
         sw._fe_last_power_raw = s.registers[2] = sw._acknowledged[2] = 33000
+        sw._set_grid_servo_baseline(33000)
         s.c.data['power_grid'] = 0
         transport = s.client._client
         original = transport.write_registers.side_effect
@@ -316,7 +317,8 @@ def test_busy_servo_uses_latest_target_and_remaining_duration():
             sw._deadline -= 3600
             sw._queue_servo()
         with patch('custom_components.alphaess_modbus.switch.asyncio.sleep', side_effect=backoff):
-            sw._queue_servo()
+            s.c._last_polled["power_grid"] = s.now + 1
+            sw._observe_grid_target(s.c.data, exporting=True)
             await asyncio.gather(*sw._pending_tasks)
         assert len(attempts) == 2 and attempts[1][2] < attempts[0][2]
         assert 25198 <= attempts[1][8] <= 25200
@@ -373,6 +375,7 @@ def test_busy_after_confirming_a_lost_reply_does_not_lose_the_newest_servo_targe
         sw = s.other('force_export')
         await sw.async_turn_on()
         sw._fe_last_power_raw = s.registers[2] = sw._acknowledged[2] = 33000
+        sw._set_grid_servo_baseline(33000)
         s.c.data['power_grid'] = 0
         transport = s.client._client
         original = transport.write_registers.side_effect
@@ -392,12 +395,13 @@ def test_busy_after_confirming_a_lost_reply_does_not_lose_the_newest_servo_targe
                 s.c.numbers['force_export_power'] = 1
                 sw._queue_servo()
         with patch('custom_components.alphaess_modbus.switch.asyncio.sleep', side_effect=backoff):
-            sw._queue_servo()
+            s.c._last_polled["power_grid"] = s.now + 1
+            sw._observe_grid_target(s.c.data, exporting=True)
             await asyncio.gather(*sw._pending_tasks)
         assert len(attempts) == 3
-        # The confirmed 2500 W command plus the newest 1000 W grid-error
-        # correction gives 2800 W; the obsolete 5000 W target gives 4000 W.
-        assert s.registers == attempts[-1] and s.registers[2] == 34800
+        # The new grid target is 4000 W lower and clamps the pending 2500 W
+        # discharge to zero. A busy retry must retain that newest target.
+        assert s.registers == attempts[-1] and s.registers[2] == 32000
         assert sw._uncertain is None and not sw._suspended
         await sw.async_force_off()
     run(scenario())

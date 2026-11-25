@@ -72,6 +72,57 @@ class AlphaESSConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
+    async def async_step_reconfigure(self, user_input: dict | None = None) -> FlowResult:
+        entry = self._get_reconfigure_entry()
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            host = user_input[CONF_HOST]
+            port = user_input[CONF_PORT]
+            slave_id = user_input[CONF_SLAVE_ID]
+            if all(entry.data.get(key) == value for key, value in user_input.items()):
+                return self.async_abort(reason="reconfigure_successful")
+            if any(
+                other.entry_id != entry.entry_id
+                and other.data.get(CONF_HOST) == host
+                and other.data.get(CONF_PORT) == port
+                for other in self.hass.config_entries.async_entries(DOMAIN)
+            ):
+                return self.async_abort(reason="already_configured")
+            try:
+                await self._async_probe_reconfigure(entry, host, port, slave_id)
+            except Exception:
+                _LOGGER.exception("AlphaESS reconfigure probe failed for %s:%s (unit %s)", host, port, slave_id)
+                errors["base"] = "cannot_connect"
+            else:
+                title = entry.title
+                if title == f"AlphaESS ({entry.data[CONF_HOST]})":
+                    title = f"AlphaESS ({host})"
+                return self.async_update_reload_and_abort(
+                    entry, data_updates=user_input, unique_id=f"{host}:{port}", title=title,
+                    reload_even_if_entry_is_unchanged=False,
+                )
+
+        return self.async_show_form(
+            step_id="reconfigure",
+            data_schema=vol.Schema({
+                vol.Required(CONF_HOST, default=entry.data[CONF_HOST]): vol.All(str, vol.Length(min=1)),
+                vol.Required(CONF_PORT, default=entry.data[CONF_PORT]): vol.All(vol.Coerce(int), vol.Range(min=1, max=65535)),
+                vol.Required(CONF_SLAVE_ID, default=entry.data[CONF_SLAVE_ID]): vol.All(vol.Coerce(int), vol.Range(min=1, max=247)),
+            }),
+            errors=errors,
+        )
+
+    async def _async_probe_reconfigure(self, entry, host: str, port: int, slave_id: int) -> None:
+        running = self.hass.data.get(DOMAIN, {}).get(entry.entry_id)
+        if running is not None and (host, port) == (entry.data[CONF_HOST], entry.data[CONF_PORT]):
+            await running.client.probe(slave_id)
+            return
+        client = AlphaESSModbusClient(host=host, port=port, slave_id=slave_id)
+        try:
+            await client.read_register(0x0102, "int16")
+        finally:
+            await client.close()
+
 
 class AlphaESSOptionsFlowHandler(config_entries.OptionsFlow):
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:

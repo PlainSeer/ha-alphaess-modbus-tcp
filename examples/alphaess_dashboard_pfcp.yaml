@@ -202,6 +202,10 @@ sections:
         entities:
           - entity: switch.alphaess_inverter_excess_export
             name: Enable
+          - entity: number.alphaess_inverter_excess_export_duration
+            name: Excess Export Duration
+          - entity: sensor.alphaess_inverter_excess_export_countdown
+            name: Excess Export Countdown
           - entity: binary_sensor.alphaess_inverter_excess_export_pause
             name: Pause
           - type: section
@@ -378,6 +382,8 @@ sections:
           - type: section
           - entity: sensor.alphaess_inverter_inverter_temperature
             name: Inverter Temperature
+          - entity: sensor.alphaess_inverter_inverter_work_mode_name
+            name: Work Mode Name
           - entity: sensor.alphaess_inverter_inverter_work_mode
             name: Work Mode
           - entity: sensor.alphaess_inverter_system_fault

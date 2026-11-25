@@ -56,6 +56,9 @@ def test_successful_polling_preserves_reads_existing_values_and_never_writes(mul
         coordinator = object.__new__(AlphaESSCoordinator)
         coordinator.data = {}
         coordinator._last_polled = {}
+        coordinator._block_splits = set()
+        coordinator._illegal_replies = {}
+        coordinator._unsupported_until = {}
         coordinator._scan_multiplier = multiplier
         coordinator._model_variant = "standard"
         words = dict(zip((0x17, 0x18, 0x19), (29, 64, 25)))

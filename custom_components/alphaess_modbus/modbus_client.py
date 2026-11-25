@@ -28,6 +28,10 @@ _CONNECT_RETRY_DELAY = 1.0  # seconds between retries
 _COMM_ERRORS = (ModbusException, asyncio.TimeoutError, OSError)
 
 
+class ModbusIllegalAddress(ModbusException):
+    """The inverter rejected the requested address on an active link."""
+
+
 def _retry_owner(client):
     # 3.16 async: ctx; earlier 3.x: transaction; 3.7 async: client.
     for owner in (getattr(client, "ctx", None), getattr(client, "transaction", None), client):
@@ -161,7 +165,10 @@ class AlphaESSModbusClient:
             self._teardown_client()
             raise ModbusException(f"No response {what}")
         if result.isError():
-            if not getattr(result, "exception_code", None):
+            code = getattr(result, "exception_code", None)
+            if code == 2:
+                raise ModbusIllegalAddress(f"Error {what}: {result}")
+            if not code:
                 self._teardown_client()  # includes 3.7's synthesized no-reply response
             raise ModbusException(f"Error {what}: {result}")
         return result
@@ -180,6 +187,15 @@ class AlphaESSModbusClient:
                 f"reading block {start:#06x}+{count}",
             )
             return list(result.registers)
+
+    async def probe(self, slave_id: int) -> None:
+        """Test a unit ID under the existing transaction lock."""
+        async with self._lock:
+            await self._ensure_connected()
+            await self._request(
+                lambda: self._client.read_holding_registers(0x0102, count=1, **{_SLAVE_KWARG: slave_id}),
+                f"probing unit {slave_id}",
+            )
 
     async def read_register(self, address: int, data_type: str, count: int = 1) -> Any:
         async with self._lock:

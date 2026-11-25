@@ -1,5 +1,41 @@
 # Changelog
 
+### v1.21.4 — Connection, dispatch and diagnostics
+
+- Promote the v1.21.4 beta changes, including connection reconfiguration, AC-limit persistence, clock encoding, Hold preference restore, safer restart/reset defaults and targeted raw writes.
+- Incorporate selected implementation changes from upstream v1.16.0. Isolate rejected Modbus addresses, recover valid readings and retain communication-error handling.
+- Calculate house load from PV and battery power during a UPS outage. Keep the existing house-load sensors and daily accumulator.
+- Improve Force Export and Force Import target tracking and setpoint edits. Add an optional Excess Export duration and countdown, with auto-stop disabled at zero.
+- Add readable work mode, battery status flags, opt-in BMS/PV diagnostics and Hillview's read-only System Mode. Correct battery sign descriptions and retain the identity and register of each existing energy sensor.
+
+### v1.21.4b4 — Upstream connection and dispatch improvements (beta)
+
+- Backport upstream connection reconfiguration and the Marketplace category.
+- Restore the four Hold preferences across reloads. Dispatch switches still require a new start.
+- Keep Force Export and Force Import active when zero battery power is legitimate. Stop at or near the configured SoC when Hold is off. Keep the existing inverter-side SoC target.
+
+### v1.21.4b3 — AC-limit persistence and control safeguards (beta)
+
+- Save the Inverter AC Limit per configuration entry and seed the coordinator from it before entity setup. When upgrading an existing entry, import a valid restored select value on first load.
+- Encode the three inverter clock words as packed BCD using the Home Assistant time zone.
+- Default-disable newly registered Restart PCS, Restart EMS and Reset Energy Totals buttons. Preserve existing registry settings.
+- Limit the public raw-write action to operational registers and one loaded inverter. Require a configuration entry ID when several inverters are loaded.
+
+### v1.21.4b2 — Optional house-load comparison sensors (beta)
+
+- Related to [issue #10](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues/10): add separate **House Load Median 5 (Comparison)** and **House Load Battery Step (Comparison)** diagnostic power sensors, both disabled by default.
+- Use existing completed power polls only, without additional Modbus requests or updates to shared source/control state. Preserve existing house-load sensors, filtered sensors, accumulated totals and dispatch logic.
+- Bound median history to ten seconds and at most five accepted samples, using an odd-sized window during warm-up or slow polling. Bound battery-step estimates to two fresh samples or four seconds, whichever comes first. Reset across missing/stale input, mode changes, long gaps and restart; entity-only timers expire estimates without triggering controller updates.
+- Both experiments can suppress genuine short loads, including battery-supplied appliance loads. They are not verified consumption measurements or recommended control inputs. Energy comparisons remain offline; no experimental energy totals are added.
+- Retain v1.21.4b1's optional PV meter counter, disabled and unpolled by default. Enabling disabled entities can reload the integration in Home Assistant; enable test sensors while no dispatch is active.
+
+### v1.21.4b1 — Optional AC PV meter energy counter (beta)
+
+- Related to [issue #16](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues/16): add a separate `PV Meter Energy (0x0092)` lifetime sensor, using an unsigned 32-bit counter at 0.01 kWh per count.
+- Disable the new sensor and its polling by default. When enabled, read it separately at the configured 60-second cadence so an unsupported address cannot invalidate the existing `0x0090` counter. Failed optional reads report unknown and wait until the next scheduled attempt.
+- Preserve existing sensor identities, history, house-load/daily-energy calculations and inverter controls. Document the register directions and request daylight/overnight comparisons before assigning a universal production label. No issue #10 filtering changes are included.
+- Enabling a disabled entity can reload the integration in Home Assistant; enable this test sensor while no dispatch is active.
+
 ### v1.21.3 — House-load consistency and daily energy reliability
 
 - Promote v1.21.3b3 to stable with the same runtime code.

@@ -24,9 +24,13 @@ OVERVIEW = [
     ("Solar strings", [(f"pv{i}_power", f"PV string {i}") for i in range(1, 5)] +
      [("active_power_pv_meter", "AC PV meter"), ("inverter_temperature", "Inverter temperature")]),
     ("Battery details", [("battery_status", "Status"), ("battery_voltage", "Voltage"),
+                         ("battery_max_charge_power", "Max charge power"),
+                         ("battery_max_discharge_power", "Max discharge power"),
+                         ("battery_soc_calibration", "SoC calibration"),
                          ("battery_current", "Current"), ("battery_min_cell_temp", "Minimum cell temperature"),
                          ("battery_max_cell_temp", "Maximum cell temperature"),
                          ("battery_remaining_time", "Remaining time")]),
+    ("Inverter status", [("inverter_work_mode_name", "Work mode"), ("system_mode", "System mode")]),
     ("Filtered power", [("current_house_load_filtered", "Filtered house load"),
                         ("current_pv_production_filtered", "Filtered solar"), ("excess_power", "Excess power")]),
     ("House energy estimates", [("house_energy_today", "Daily balance"),
@@ -34,7 +38,7 @@ OVERVIEW = [
 ]
 DIAGNOSTICS = [
     ("Faults & warnings", r"fault|warning"),
-    ("Energy", r"^(total_energy_|today_|house_energy_|house_load_energy_)"),
+    ("Energy", r"^(total_energy_|today_|house_energy_|house_load_energy_|pv_inverter_energy$|pv_system_total_energy$)"),
     ("Dispatch & operating", r"dispatch|^force_|^peak_shaving|^excess_export|^(charging|discharging)_"),
     ("Battery", r"battery|^bms_|^lmu_"), ("Grid", r"grid|^(ovp|uvp|ofp|ufp)"),
     ("Solar", r"^pv|_pv_|^active_power_pv"),
