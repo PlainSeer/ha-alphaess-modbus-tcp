@@ -23,6 +23,9 @@ def coordinator(enabled=False, multiplier=1, model="standard"):
     c.data = {}
     c.last_update_success = True
     c._last_polled = {}
+    c._block_splits = set()
+    c._illegal_replies = {}
+    c._unsupported_until = {}
     c._scan_multiplier = multiplier
     c._model_variant = model
     c.optional_poll_keys = {KEY} if enabled else set()

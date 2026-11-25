@@ -41,14 +41,14 @@ _LOGGER = logging.getLogger(__name__)
 # back drove a kilowatt-scale limit cycle (the battery's own output fed into its next
 # command). Servoing on grid alone breaks that feedback.
 #
-# new_setpoint = last_setpoint + _SERVO_GAIN * grid_error
-# With ~one poll of meter lag the loop is critically damped near gain 0.25, so a gain
-# of 0.3 gives a fast, essentially overshoot-free response (important for zero-import
-# export tariffs) and zero steady-state error. Raise for faster recovery, lower if it
-# ever hunts. A rewrite is only issued once the setpoint moves by _SERVO_DEADBAND_W,
-# with a _DISPATCH_STALE_REWRITE_S liveness fallback.
+# Accumulate small meter corrections between acknowledged writes. The band is
+# wider on the side that exports slightly more or imports slightly less.
 _SERVO_GAIN = 0.3
-_SERVO_DEADBAND_W = 80
+_SERVO_MIN_STEP_W = 20
+_SERVO_NOISE_W = 20
+_SERVO_TOLERANCE_W = 100
+_SERVO_SETTLE_S = 6.0
+_SERVO_SETTLE_MIN_STEP_W = 300
 _DISPATCH_STALE_REWRITE_S = 60
 
 
@@ -134,6 +134,10 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         self._attempted_deadline = None
         self._servo_worker = None
         self._servo_pending = False
+        self._servo_power_w: float | None = None
+        self._servo_target_w: float | None = None
+        self._servo_settle_until = 0.0
+        self._servo_grid_poll: float | None = None
         self._timer_cancel: asyncio.TimerHandle | None = None
         self._duration_cancel: asyncio.TimerHandle | None = None
         self._soc_unsub: Any | None = None
@@ -291,6 +295,8 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                 await self._start_dispatch()
             elif self.switch_key == "excess_export":
                 await self._start_excess_export()
+                if self._is_on:
+                    self._schedule_excess_export_stop()
         except (Exception, asyncio.CancelledError) as err:
             if isinstance(err, asyncio.CancelledError):
                 err = WriteIndeterminate("Start cancelled; any in-flight transaction was drained") if self._uncertain is not None else WriteNotSent("Start cancelled before transmission")
@@ -300,11 +306,11 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                 self._record_fault(err, suspend=True)
             raise
 
-    async def async_apply_param_change(self, *, reset_timer: bool) -> None:
+    async def async_apply_param_change(self, *, reset_timer: bool, param_key: str | None = None) -> None:
         async with _control_lock(self._coordinator):
-            return await self._apply_param_change(reset_timer=reset_timer)
+            return await self._apply_param_change(reset_timer=reset_timer, param_key=param_key)
 
-    async def _apply_param_change(self, *, reset_timer: bool) -> None:
+    async def _apply_param_change(self, *, reset_timer: bool, param_key: str | None = None) -> None:
         """Re-apply this switch's dispatch after a mid-run parameter change.
 
         Called from number._refire_if_active when a dispatch-param slider changes
@@ -317,10 +323,16 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             return
         if self._suspended:
             raise DispatchWriteError("Session suspended; explicitly start a new session to recover")
+        if param_key == "excess_export_duration" and self.switch_key == "excess_export":
+            self._schedule_excess_export_stop()
+            return
         if reset_timer:
             await self._turn_on()
             return
         try:
+            if param_key and self.switch_key in ("force_export", "force_import"):
+                if await self._retarget_grid_servo(param_key):
+                    return
             if self.switch_key == "force_charging":
                 await self._start_force_charging(reset_timer=False)
             elif self.switch_key == "force_discharging":
@@ -475,6 +487,20 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         self._fi_last_power_raw = None
         self._fi_last_write_time = 0.0
         self._bp_near_zero_since = None
+        self._servo_power_w = self._servo_target_w = self._servo_grid_poll = None
+        self._servo_settle_until = 0.0
+        if self.switch_key == "excess_export":
+            self._coordinator.excess_export_deadline = None
+
+    def _schedule_excess_export_stop(self) -> None:
+        if self._duration_cancel:
+            self._duration_cancel.cancel()
+            self._duration_cancel = None
+        seconds = int(self._num("excess_export_duration", 0) * 60)
+        self._coordinator.excess_export_deadline = None
+        if seconds > 0:
+            self._coordinator.excess_export_deadline = time.monotonic() + seconds
+            self._schedule_duration_off(seconds)
 
     def _schedule_duration_off(self, duration_seconds: int) -> None:
         if not self._is_on:
@@ -484,16 +510,20 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         loop = self.hass.loop
         generation = self._control_generation
 
+        async def stop_if_current():
+            if self._duration_cancel is handle:
+                await self._automatic_stop()
+
         def _callback():
             task = self._create_control_task(
-                self._automatic_stop(),
+                stop_if_current(),
                 name=f"alphaess_{self.switch_key}_duration_off", generation=generation,
             )
             self._pending_tasks.add(task)
             task.add_done_callback(self._pending_tasks.discard)
 
         delay = max(0, self._deadline - time.monotonic()) if self._deadline is not None else duration_seconds
-        self._duration_cancel = loop.call_later(delay, _callback)
+        handle = self._duration_cancel = loop.call_later(delay, _callback)
 
     def _schedule_auto_off(self, duration_seconds: int) -> None:
         self._schedule_duration_off(duration_seconds)
@@ -539,22 +569,84 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             self._servo_worker.add_done_callback(self._pending_tasks.discard)
 
     def _servo_word(self):
-        d = self._coordinator.data or {}
-        if house_load_sample(self._coordinator).raw is None:
+        data = self._coordinator.data or {}
+        if house_load_sample(self._coordinator).raw is None or data.get("power_grid") is None:
             return None
-        grid = d.get("power_grid")
-        if grid is None:
+        if self.switch_key == "force_import" and self._coordinator.fi_paused:
             return None
         exporting = self.switch_key == "force_export"
-        baseline = self._fe_last_power_raw if exporting else self._fi_last_power_raw
+        if self._servo_power_w is None:
+            seed = self._compute_force_export_power_raw if exporting else self._compute_force_import_power_raw
+            return seed(data)
+        return round(32000 + self._servo_power_w if exporting else 32000 - self._servo_power_w)
+
+    def _set_grid_servo_baseline(self, word: int) -> None:
+        self._servo_power_w = min(self._coordinator.ac_limit_w, abs(word - 32000))
+        self._servo_target_w = self._num(f"{self.switch_key}_power", 5.0) * 1000
+
+    async def _retarget_grid_servo(self, param_key: str) -> bool:
+        exporting = self.switch_key == "force_export"
+        if param_key == f"{self.switch_key}_power":
+            # The next fresh grid sample applies the target change. Slider bursts
+            # keep one desired target and do not each write a dispatch command.
+            return True
+        if param_key != f"{self.switch_key}_cutoff_soc":
+            return False
+
+        cutoff = self._num(param_key, 4.0 if exporting else 100.0)
+        data = self._coordinator.data or {}
+        soc = data.get("soc_battery")
+        reached = soc is not None and (float(soc) <= cutoff if exporting else float(soc) >= cutoff)
+        if reached and not self._hold_enabled(f"{self.switch_key}_hold"):
+            await self._automatic_stop()
+            return True
+        if not exporting and self._coordinator.fi_paused:
+            return True
+        word = self._fe_last_power_raw if exporting else self._fi_last_power_raw
+        if word is None:
+            return False
+        writer = self._write_export_dispatch if exporting else self._write_import_dispatch
+        duration_s = int(self._num(f"{self.switch_key}_duration", 120.0) * 60)
+        await writer(word, duration_s, reset_timer=False, preserve_power=True)
+        return True
+
+    def _shift_grid_target(self, now: float) -> bool:
         target = self._num(f"{self.switch_key}_power", 5.0) * 1000
-        if baseline is None:
-            word = self._compute_force_export_power_raw(d) if exporting else self._compute_force_import_power_raw(d)
-            return word
-        error = float(grid) + target if exporting else target - float(grid)
-        previous = baseline - 32000 if exporting else 32000 - baseline
-        power = max(0, min(self._coordinator.ac_limit_w, previous + _SERVO_GAIN * error))
-        return round(32000 + power if exporting else 32000 - power)
+        if self._servo_target_w is None or target == self._servo_target_w:
+            return False
+        delta = target - self._servo_target_w
+        self._servo_target_w = target
+        self._servo_power_w = max(0, min(self._coordinator.ac_limit_w, self._servo_power_w + delta))
+        if abs(delta) >= _SERVO_SETTLE_MIN_STEP_W and now >= self._servo_settle_until + _SERVO_SETTLE_S:
+            self._servo_settle_until = now + _SERVO_SETTLE_S
+        return True
+
+    def _observe_grid_target(self, data, *, exporting: bool) -> None:
+        word = self._servo_word()
+        if word is None:
+            return
+        now = time.monotonic()
+        target = self._num(f"{self.switch_key}_power", 5.0) * 1000
+        last_raw = self._fe_last_power_raw if exporting else self._fi_last_power_raw
+        last_write = self._fe_last_write_time if exporting else self._fi_last_write_time
+        poll = self._coordinator._last_polled.get("power_grid")
+        if self._servo_power_w is None:
+            self._set_grid_servo_baseline(word)
+        elif not self._shift_grid_target(now) and now >= self._servo_settle_until and (
+            poll is None or poll != self._servo_grid_poll
+        ):
+            grid = float(data["power_grid"])
+            error = grid + target if exporting else target - grid
+            low, high = ((-_SERVO_TOLERANCE_W, _SERVO_NOISE_W) if exporting
+                         else (-_SERVO_NOISE_W, _SERVO_TOLERANCE_W))
+            if error < low or error > high:
+                self._servo_power_w += _SERVO_GAIN * error
+        self._servo_grid_poll = poll
+        self._servo_power_w = max(0, min(self._coordinator.ac_limit_w, self._servo_power_w))
+        word = self._servo_word()
+        if (last_raw is None or abs(word - last_raw) >= _SERVO_MIN_STEP_W
+                or now - last_write >= _DISPATCH_STALE_REWRITE_S):
+            self._queue_servo()
 
     async def _run_servo(self):
         generation = self._control_generation
@@ -579,6 +671,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
                         await asyncio.sleep(0.5 * (attempt + 1))
                         continue
                 exporting = self.switch_key == "force_export"
+                self._shift_grid_target(time.monotonic())
                 word = self._servo_word()
                 if word is None:
                     return
@@ -630,7 +723,9 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         task.add_done_callback(lambda _: coro.close())
         return task
 
-    async def _write_dispatch(self, values: list[int], *, reset_timer: bool = True) -> bool:
+    async def _write_dispatch(
+        self, values: list[int], *, reset_timer: bool = True, preserve_power: bool = False
+    ) -> bool:
         # Captured before waiting for the shared client lock; a stopped session
         # must not write even if a new session has since started on this switch.
         generation = self._control_generation
@@ -642,7 +737,11 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             return (self._is_on and self._control_generation == generation
                     and self._coordinator.active_dispatch_key == self.switch_key
                     and not self._suspended
-                    and (self.switch_key != "excess_export" or not self._coordinator.ee_paused)
+                    and (self.switch_key != "excess_export" or (
+                        not self._coordinator.ee_paused
+                        and (self._coordinator.excess_export_deadline is None
+                             or time.monotonic() < self._coordinator.excess_export_deadline)))
+                    and (self.switch_key != "force_import" or not self._coordinator.fi_paused)
                     and (self._deadline is None or time.monotonic() < self._deadline))
 
         def prepare():
@@ -651,16 +750,19 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             if reconciled and asyncio.current_task() is self._servo_worker and not self._servo_pending:
                 return None  # the uncertain command was already applied; no replay
             command = list(values)
+            if preserve_power and self._acknowledged is not None:
+                command[2] = self._acknowledged[2]
             if asyncio.current_task() is self._servo_worker:
                 # Refresh the newest requested setpoint after any lock/read wait.
                 # Events already represented by this command are now coalesced.
                 self._servo_pending = False
                 if self.switch_key in ("force_export", "force_import"):
+                    self._shift_grid_target(time.monotonic())
                     word = self._servo_word()
                     if word is None:
                         return None
                     last = self._fe_last_write_time if self.switch_key == "force_export" else self._fi_last_write_time
-                    if (self._acknowledged is not None and abs(word - self._acknowledged[2]) < _SERVO_DEADBAND_W
+                    if (self._acknowledged is not None and abs(word - self._acknowledged[2]) < _SERVO_MIN_STEP_W
                             and time.monotonic() - last < _DISPATCH_STALE_REWRITE_S and self._uncertain is None):
                         return None
                     command[2] = word
@@ -966,16 +1068,19 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         if house_load_w is None or pv_production_w is None:
             return None
         target_export_w = int(self._num("force_export_power", 5.0) * 1000)
-        battery_discharge_w = max(0, target_export_w + int(house_load_w) - int(pv_production_w))
+        net_demand_w = target_export_w + int(house_load_w) - int(pv_production_w)
+        battery_discharge_w = max(0, min(self._coordinator.ac_limit_w, net_demand_w))
         return int(32000 + battery_discharge_w)
 
-    async def _write_export_dispatch(self, word: int, duration_s: int, *, reset_timer: bool) -> bool:
+    async def _write_export_dispatch(
+        self, word: int, duration_s: int, *, reset_timer: bool, preserve_power: bool = False
+    ) -> bool:
         cutoff_soc = self._num("force_export_cutoff_soc", 4.0)
         soc_raw = int(cutoff_soc / DISPATCH_SOC_SCALE)
         return await self._write_dispatch([
             1, 0, int(word), 0, 32000, DISPATCH_MODE_SOC_CONTROL, soc_raw, 0, duration_s,
             DISPATCH_FLOW_DIRECTION, DISPATCH_PV_UNCHANGED,
-        ], reset_timer=reset_timer)
+        ], reset_timer=reset_timer, preserve_power=preserve_power)
 
     async def _start_force_export(self, duration_s: int, *, reset_timer: bool = True) -> None:
         d = self._coordinator.data or {}
@@ -994,6 +1099,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             return
         if not await self._write_export_dispatch(power_raw, duration_s, reset_timer=reset_timer):
             return
+        self._set_grid_servo_baseline(power_raw)
         self._start_force_export_watcher(duration_s)
 
     def _start_force_export_watcher(self, duration_s: int) -> None:
@@ -1002,7 +1108,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         Trims the battery discharge word so the grid meter moves toward -target
         (exporting `target`), using grid error only (see _SERVO_GAIN notes). Rewrites
         use reset_timer=False so the duration countdown is preserved, and are issued
-        only when the setpoint moves by _SERVO_DEADBAND_W or every _DISPATCH_STALE_REWRITE_S.
+        only when the setpoint moves by _SERVO_MIN_STEP_W or every _DISPATCH_STALE_REWRITE_S.
         """
         if not self._is_on:
             return
@@ -1018,32 +1124,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             cutoff_soc = self._num("force_export_cutoff_soc", 4.0)
             if self._check_servo_cutoff(d, cutoff=cutoff_soc, exporting=True):
                 return
-            if house_load_sample(self._coordinator).raw is None:
-                return
-            grid = d.get("power_grid")
-            if grid is None:
-                return
-            target_w = int(self._num("force_export_power", 5.0) * 1000)
-            if self._fe_last_power_raw is None:
-                # No baseline yet (initial feed-forward was deferred). Seed from the
-                # feed-forward estimate if available, else assume discharge == target.
-                seed = self._compute_force_export_power_raw(d)
-                word = seed if seed is not None else int(32000 + max(0, target_w))
-            else:
-                # Servo: drive grid toward -target by trimming the discharge word.
-                # error > 0 means exporting too little, so discharge more.
-                error_w = float(grid) + target_w
-                new_discharge = (self._fe_last_power_raw - 32000) + _SERVO_GAIN * error_w
-                new_discharge = max(0.0, min(float(self._coordinator.ac_limit_w), new_discharge))
-                word = int(round(32000 + new_discharge))
-            now = time.monotonic()
-            changed = (
-                self._fe_last_power_raw is None
-                or abs(word - self._fe_last_power_raw) >= _SERVO_DEADBAND_W
-            )
-            stale = (now - self._fe_last_write_time) >= _DISPATCH_STALE_REWRITE_S
-            if changed or stale:
-                self._queue_servo()
+            self._observe_grid_target(d, exporting=True)
 
         self._fe_listener_unsub = self._coordinator.async_add_listener(_check)
 
@@ -1220,16 +1301,19 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         if house_load_w is None or pv_production_w is None:
             return None
         import_power_kw = self._num("force_import_power", 5.0)
-        charge_power_w = max(0, int(import_power_kw * 1000) - int(house_load_w) + int(pv_production_w))
+        available_import_w = int(import_power_kw * 1000) - int(house_load_w) + int(pv_production_w)
+        charge_power_w = max(0, min(self._coordinator.ac_limit_w, available_import_w))
         return int(32000 - charge_power_w)
 
-    async def _write_import_dispatch(self, word: int, duration_s: int, *, reset_timer: bool) -> bool:
+    async def _write_import_dispatch(
+        self, word: int, duration_s: int, *, reset_timer: bool, preserve_power: bool = False
+    ) -> bool:
         cutoff_soc = self._num("force_import_cutoff_soc", 100.0)
         soc_raw = int(cutoff_soc / DISPATCH_SOC_SCALE)
         return await self._write_dispatch([
             1, 0, int(word), 0, 32000, DISPATCH_MODE_SOC_CONTROL, soc_raw, 0, duration_s,
             DISPATCH_FLOW_DIRECTION, DISPATCH_PV_UNCHANGED,
-        ], reset_timer=reset_timer)
+        ], reset_timer=reset_timer, preserve_power=preserve_power)
 
     async def _start_force_import(self, duration_s: int, *, reset_timer: bool = True) -> None:
         d = self._coordinator.data or {}
@@ -1242,6 +1326,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             return
         if not await self._write_import_dispatch(power_raw, duration_s, reset_timer=reset_timer):
             return
+        self._set_grid_servo_baseline(power_raw)
         self._start_force_import_watcher(duration_s)
 
     def _start_force_import_watcher(self, duration_s: int) -> None:
@@ -1250,7 +1335,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
         Trims the battery charge word so the grid meter moves toward +target
         (importing `target`), using grid error only (see _SERVO_GAIN notes). Rewrites
         use reset_timer=False so the duration countdown is preserved, and are issued
-        only when the setpoint moves by _SERVO_DEADBAND_W or every _DISPATCH_STALE_REWRITE_S.
+        only when the setpoint moves by _SERVO_MIN_STEP_W or every _DISPATCH_STALE_REWRITE_S.
         Skips rewrites while fi_paused, matching the previous refresh behaviour.
         """
         if not self._is_on:
@@ -1267,32 +1352,7 @@ class AlphaESSSwitch(RestoreEntity, SwitchEntity):
             cutoff_soc = self._num("force_import_cutoff_soc", 100.0)
             if self._check_servo_cutoff(d, cutoff=cutoff_soc, exporting=False) or self._coordinator.fi_paused:
                 return
-            if house_load_sample(self._coordinator).raw is None:
-                return
-            grid = d.get("power_grid")
-            if grid is None:
-                return
-            target_w = int(self._num("force_import_power", 5.0) * 1000)
-            if self._fi_last_power_raw is None:
-                # No baseline yet (initial feed-forward was deferred). Seed from the
-                # feed-forward estimate if available, else assume charge == target.
-                seed = self._compute_force_import_power_raw(d)
-                word = seed if seed is not None else int(32000 - max(0, target_w))
-            else:
-                # Servo: drive grid toward +target by trimming the charge word.
-                # error > 0 means importing too little, so charge more.
-                error_w = target_w - float(grid)
-                new_charge = (32000 - self._fi_last_power_raw) + _SERVO_GAIN * error_w
-                new_charge = max(0.0, min(float(self._coordinator.ac_limit_w), new_charge))
-                word = int(round(32000 - new_charge))
-            now = time.monotonic()
-            changed = (
-                self._fi_last_power_raw is None
-                or abs(word - self._fi_last_power_raw) >= _SERVO_DEADBAND_W
-            )
-            stale = (now - self._fi_last_write_time) >= _DISPATCH_STALE_REWRITE_S
-            if changed or stale:
-                self._queue_servo()
+            self._observe_grid_target(d, exporting=False)
 
         self._fi_listener_unsub = self._coordinator.async_add_listener(_check)
 

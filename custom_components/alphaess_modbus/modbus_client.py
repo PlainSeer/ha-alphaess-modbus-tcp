@@ -28,6 +28,10 @@ _CONNECT_RETRY_DELAY = 1.0  # seconds between retries
 _COMM_ERRORS = (ModbusException, asyncio.TimeoutError, OSError)
 
 
+class ModbusIllegalAddress(ModbusException):
+    """The inverter rejected the requested address on an active link."""
+
+
 def _retry_owner(client):
     # 3.16 async: ctx; earlier 3.x: transaction; 3.7 async: client.
     for owner in (getattr(client, "ctx", None), getattr(client, "transaction", None), client):
@@ -161,7 +165,10 @@ class AlphaESSModbusClient:
             self._teardown_client()
             raise ModbusException(f"No response {what}")
         if result.isError():
-            if not getattr(result, "exception_code", None):
+            code = getattr(result, "exception_code", None)
+            if code == 2:
+                raise ModbusIllegalAddress(f"Error {what}: {result}")
+            if not code:
                 self._teardown_client()  # includes 3.7's synthesized no-reply response
             raise ModbusException(f"Error {what}: {result}")
         return result

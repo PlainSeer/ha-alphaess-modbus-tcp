@@ -20,9 +20,11 @@ def test_expiry_respects_slow_polling_but_failed_values_still_expire(multiplier,
     async def scenario():
         grid = next(r for r in SENSOR_REGISTERS if r.key == 'power_grid')
         dispatch = next(r for r in SENSOR_REGISTERS if r.key == 'dispatch_start')
-        c = SimpleNamespace(data={'power_grid': 10, 'dispatch_start': 1},
+        c = object.__new__(AlphaESSCoordinator)
+        c.__dict__.update(data={'power_grid': 10, 'dispatch_start': 1},
                             _last_polled={'power_grid': 100.0, 'dispatch_start': 100.0},
-                            _scan_multiplier=multiplier, _model_variant='standard')
+                            _scan_multiplier=multiplier, _model_variant='standard',
+                            _block_splits=set(), _illegal_replies={}, _unsupported_until={})
         async def read(address, count):
             if address == dispatch.address:
                 raise ModbusException('dispatch block offline')

@@ -126,7 +126,8 @@ def test_peak_reacts_to_a_large_load_step_without_false_waiting_or_reset():
 
 def test_completed_coordinator_polls_accept_large_and_unchanged_power_values():
     async def run():
-        c = coordinator()
+        c = object.__new__(AlphaESSCoordinator)
+        c.__dict__.update(vars(coordinator()), _block_splits=set(), _illegal_replies={}, _unsupported_until={})
         c._scan_multiplier, c._model_variant = 1, "standard"
         c._is_due = lambda reg: True
         c.client = SimpleNamespace(read_block=AsyncMock(return_value=[3000]))

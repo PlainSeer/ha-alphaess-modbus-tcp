@@ -34,15 +34,22 @@ from .house_load_comparison import AlphaESSHouseLoadComparisonSensor, COMPARISON
 class CalculatedSensorDef:
     key: str
     name: str
-    unit: str
+    unit: str | None
     device_class: str | None
+    state_class: SensorStateClass | None = SensorStateClass.MEASUREMENT
 
 
 CALCULATED_SENSORS: list[CalculatedSensorDef] = [
     CalculatedSensorDef("current_pv_production", "Current PV Production", "W", "power"),
     CalculatedSensorDef("current_house_load", "Current House Load", "W", "power"),
     CalculatedSensorDef("battery_remaining_time", "Battery Remaining Time", "min", "duration"),
+    CalculatedSensorDef("inverter_work_mode_name", "Inverter Work Mode Name", None, None, None),
 ]
+
+_WORK_MODE_NAMES = {
+    0: "Wait", 1: "Online", 2: "UPS", 3: "Bypass", 4: "Fault", 5: "DC",
+    6: "Self Test", 7: "Check", 8: "Update Master", 9: "Update Slave", 10: "Update ARM",
+}
 
 _DEVICE_CLASS_MAP = {
     "battery": SensorDeviceClass.BATTERY,
@@ -66,6 +73,7 @@ _SENSOR_ENUM_LOOKUPS: dict[str, dict[int, str]] = {
         5: "Battery to Grid 2",
     },
     "ip_method": {0: "DHCP", 1: "Static"},
+    "system_mode": {1: "AC", 2: "DC", 3: "Hybrid"},
 }
 
 _STATE_CLASS_MAP = {
@@ -170,6 +178,7 @@ async def async_setup_entry(
             ("force_discharging", "Force Discharging Countdown", "mdi:battery-arrow-down"),
             ("force_export",      "Force Export Countdown",      "mdi:transmission-tower-export"),
             ("force_import",      "Force Import Countdown",      "mdi:transmission-tower-import"),
+            ("excess_export",     "Excess Export Countdown",     "mdi:solar-power"),
         ]
     ]
     daily = [
@@ -224,11 +233,19 @@ class AlphaESSSensor(CoordinatorEntity[AlphaESSCoordinator], SensorEntity):
             return formatter(raw)
         return raw
 
+    @property
+    def extra_state_attributes(self) -> dict | None:
+        if self._reg.key != "battery_status":
+            return None
+        raw = (self.coordinator.data or {}).get("battery_status")
+        if raw is None:
+            return None
+        value = int(raw)
+        return {"charge_state": (value >> 8) & 0xFF, "discharge_state": value & 0xFF}
+
 
 class AlphaESSCalculatedSensor(CoordinatorEntity[AlphaESSCoordinator], SensorEntity):
     _attr_has_entity_name = True
-    _attr_state_class = SensorStateClass.MEASUREMENT
-
     def __init__(
         self,
         coordinator: AlphaESSCoordinator,
@@ -240,6 +257,7 @@ class AlphaESSCalculatedSensor(CoordinatorEntity[AlphaESSCoordinator], SensorEnt
         self._attr_unique_id = f"{entry.entry_id}_{defn.key}"
         self._attr_name = defn.name
         self._attr_native_unit_of_measurement = defn.unit
+        self._attr_state_class = defn.state_class
         self._attr_device_class = _DEVICE_CLASS_MAP.get(defn.device_class)
         self._attr_device_info = DeviceInfo(identifiers={(DOMAIN, entry.entry_id)})
 
@@ -273,6 +291,13 @@ class AlphaESSCalculatedSensor(CoordinatorEntity[AlphaESSCoordinator], SensorEnt
 
         if self._defn.key == "current_house_load":
             return house_load_sample(self.coordinator).value()
+
+        if self._defn.key == "inverter_work_mode_name":
+            mode = d.get("inverter_work_mode")
+            if mode is None:
+                return None
+            value = int(mode)
+            return _WORK_MODE_NAMES.get(value, f"Unknown ({value})")
 
         if self._defn.key == "battery_remaining_time":
             raw = d.get("battery_remaining_time_raw")
@@ -501,6 +526,9 @@ class AlphaESSModeCountdownSensor(CoordinatorEntity[AlphaESSCoordinator], Sensor
     def native_value(self) -> int | None:
         if self.coordinator.active_dispatch_key != self._switch_key:
             return None
+        if self._switch_key == "excess_export":
+            deadline = getattr(self.coordinator, "excess_export_deadline", None)
+            return None if deadline is None else max(0, math.ceil(deadline - time.monotonic()))
         deadline = getattr(self.coordinator, "dispatch_deadline", None)
         if deadline is not None:
             return max(0, int(deadline - time.monotonic()))

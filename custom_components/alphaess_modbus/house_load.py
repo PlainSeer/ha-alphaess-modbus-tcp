@@ -4,6 +4,7 @@ import time
 from .house_energy import finite
 
 HOUSE_LOAD_HOLD_SECONDS = 10.0
+_OFF_GRID_W = 10
 PV_KEYS = ("pv1_power", "pv2_power", "pv3_power", "pv4_power", "active_power_pv_meter")
 POWER_KEYS = (*PV_KEYS, "power_battery", "power_grid")
 SAMPLE_KEYS = (*POWER_KEYS, "inverter_work_mode")
@@ -16,13 +17,24 @@ def pv_production(data):
     return max(0, sum(int(value) for value in values))
 
 
+def _ups_grid_supplies_load(data):
+    grid = finite(data.get("power_grid"))
+    return finite(data.get("inverter_work_mode")) == 2 and grid is not None and abs(grid) > _OFF_GRID_W
+
+
+def house_load_input_keys(data):
+    if _ups_grid_supplies_load(data):
+        return ("power_grid", "inverter_work_mode")
+    return SAMPLE_KEYS
+
+
 def house_load_balance(data):
-    """Return the signed balance; EPS retains its existing grid-only calculation."""
+    """Use grid-only EPS readings while on-grid and PV/battery during an outage."""
     grid = finite(data.get("power_grid"))
     mode = finite(data.get("inverter_work_mode", 0))
     if grid is None or mode is None:
         return None
-    if mode == 2:
+    if _ups_grid_supplies_load(data):
         return round(grid)
     pv, battery = pv_production(data), finite(data.get("power_battery"))
     if pv is None or battery is None:
@@ -32,7 +44,7 @@ def house_load_balance(data):
 
 def house_load(data):
     balance = house_load_balance(data)
-    if balance is None or (finite(data.get("inverter_work_mode", 0)) != 2 and balance < 0):
+    if balance is None or (not _ups_grid_supplies_load(data) and balance < 0):
         return None
     return balance
 
@@ -61,13 +73,14 @@ class HouseLoadSample:
     def update(self, coordinator, data, now, *, usable=True):
         self.signature = _signature(data)
         mode = finite(data.get("inverter_work_mode", 0))
-        if mode != self._mode:
+        load_mode = (mode, _ups_grid_supplies_load(data))
+        if load_mode != self._mode:
             self._last_good = self.hold_until = None
-        self._mode = mode
+        self._mode = load_mode
         balance = house_load_balance(data) if usable else None
         # Amplitude alone cannot distinguish a real load step from register lag.
         # Do not delay or discard finite non-negative balances on that basis.
-        self.inconsistent = balance is not None and mode != 2 and balance < 0
+        self.inconsistent = balance is not None and not _ups_grid_supplies_load(data) and balance < 0
         self.reason = "negative_balance" if self.inconsistent else "valid"
         self.raw = None if self.inconsistent else balance
         if balance is None:

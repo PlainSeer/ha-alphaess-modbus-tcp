@@ -72,7 +72,7 @@ The following derived sensors use data already read by the integration. They do 
 
 The displayed power filters use 80% previous value and 20% new value on source-value changes; unchanged values do not advance them. They initialise from current readings after restart and reset after unavailable input.
 
-Current House Load combines separately read PV, battery and grid power. Outside the legacy EPS calculation, a negative balance is treated as an inconsistent sample. Display and daily accumulation retain the last accepted reading for at most 10 seconds, with `estimated: true` and `sample_status: estimated` on Current House Load. After that limit power reports unknown; the daily counter retains its known amount, sets `accumulation_paused: true` and flags the omitted interval as incomplete. Missing/failed reads do not qualify for a power estimate. Before any daily amount is known, that counter remains unavailable. Controllers use fresh accepted power samples, rather than held values, and skip inconsistent samples without resetting a session solely for that reason. Existing mode/SoC safety actions and dispatch deadlines still apply.
+Current House Load combines separately read PV, battery and grid power. With the inverter in UPS mode, grid power supplies the house-load reading while grid power exceeds 10 W in magnitude. Near zero grid power, the calculation uses the PV and battery balance. A negative calculated balance is treated as an inconsistent sample. Display and daily accumulation retain the last accepted reading for at most 10 seconds, with `estimated: true` and `sample_status: estimated` on Current House Load. After that limit power reports unknown; the daily counter retains its known amount, sets `accumulation_paused: true` and flags the omitted interval as incomplete. Missing/failed reads do not qualify for a power estimate. Before any daily amount is known, that counter remains unavailable. Controllers use fresh accepted power samples, rather than held values, and skip inconsistent samples without resetting a session solely for that reason. Existing mode/SoC safety actions and dispatch deadlines still apply.
 
 v1.21.3 retains v1.21.3b3's withdrawal of the amplitude-only upward-step confirmation rule introduced in v1.21.3b2. Finite non-negative balances are accepted immediately, including large, short, ramping and changing loads. `sample_reason` distinguishes `valid`, `negative_balance` and `missing`; `valid` means an accepted calculation, not independent verification of the inverter's internal timing. Positive register-lag artifacts remain an open limitation and can also be held during a following negative sample. The filtered sensor smooths the same readings and is not an independent measurement. Omitted energy intervals are not backfilled. PredBat or another consumer must handle genuine unknown power explicitly; this integration correction does not change consumer code, historical statistics or counter-restoration policy.
 
@@ -84,7 +84,7 @@ See the [feature comparison](docs/hillview-parity.md) for supported features and
 
 ### Optional AC PV meter counter (v1.21.4b1 beta)
 
-[Issue #16](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues/16) reports AC-coupled PV production accumulating in `0x0092` rather than the existing `0x0090` counter. The beta adds **PV Meter Energy (0x0092)** (`total_energy_pv_meter_0092`) with a separate identity. It is **disabled and not polled by default**. Existing counters, daily calculations and inverter controls are unchanged.
+[Issue #16](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues/16) reports AC-coupled PV production accumulating in `0x0092` rather than the existing `0x0090` counter. The integration exposes **PV Meter Energy (0x0092)** (`total_energy_pv_meter_0092`) with a separate identity. It is **disabled and not polled by default**. Existing counters, daily calculations and inverter controls are unchanged.
 
 To test it, find the disabled sensor under the AlphaESS device's entities and enable it. **Home Assistant can reload the integration when an entity is enabled; do this while no dispatch is active.** The new sensor then reads only `0x0092–0x0093`, once per 60 seconds in normal polling mode (adjusted by the configured polling multiplier). It uses the existing shared Modbus connection, adds no writes, and is read separately from existing blocks. A failed read makes only the new counter unknown and waits a full interval before retrying. A slow or timed-out optional read can still delay a poll cycle while enabled.
 
@@ -92,7 +92,7 @@ AlphaESS documents `0x0090` as energy fed to grid (PV) and `0x0092` as energy co
 
 ### Optional house-load comparisons (v1.21.4b2 beta)
 
-For [issue #10](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues/10), this beta adds **House Load Median 5 (Comparison)** and **House Load Battery Step (Comparison)**. Both are diagnostic sensors, **disabled by default**, using existing completed power polls without additional Modbus requests. Existing house-load readings, filtered readings, energy totals and control inputs remain unchanged. These are experimental estimates: both can hide genuine short loads, including loads supplied by the battery, and neither proves a peak is false.
+For [issue #10](https://github.com/PlainSeer/ha-alphaess-modbus-tcp/issues/10), the integration includes **House Load Median 5 (Comparison)** and **House Load Battery Step (Comparison)**. Both are diagnostic sensors, **disabled by default**, using existing completed power polls without additional Modbus requests. Existing house-load readings, filtered readings, energy totals and control inputs remain unchanged. These are experimental estimates: both can hide genuine short loads, including loads supplied by the battery, and neither proves a peak is false.
 
 See the [comparison guide](docs/house-load-comparisons.md) for enabling, time limits, gap handling, recorded attributes and test cases. Home Assistant can reload the integration when a disabled entity is enabled; enable test sensors while no dispatch is active. Compare alongside the existing sources; do not replace working PredBat or other control inputs. Energy comparisons are offline in this beta, with no additional energy totals or historical repair.
 
@@ -108,13 +108,13 @@ Version-specific changes and acknowledgements are recorded in the [release notes
 
 - **Power, energy and diagnostic sensors** - real-time power flows, battery SoC/SoH, cell voltages, temperatures, voltages, energy totals, daily energy summaries, dispatch diagnostics, grid safety parameters, faults & warnings
 - **Force Charging** - charge battery from grid at configurable power (kW), duration, and cutoff SoC
-- **Force Charging Hold** - keeps Force Charging running indefinitely after the duration expires; turn on before starting Force Charging for continuous charging without a time limit
+- **Force Charging Hold** - keeps the Force Charging session active for the configured duration
 - **Force Discharging** - discharge battery at configurable power, duration, and cutoff SoC; automatically stops 1% above the cutoff and resets dispatch so the inverter returns to self-consumption without any grid draw
 - **Force Discharging Hold** - keeps Force Discharging running for the full configured duration instead of stopping early when the SoC target is reached
 - **Force Export** - export to grid at a target feed-in rate (kW); battery discharge is dynamically adjusted for live house load and PV so the grid sees the configured power; stops automatically when the duration expires or battery reaches the cutoff SoC
-- **Force Export Hold** - keeps Force Export running indefinitely after the duration expires; turn on before starting Force Export for continuous export without a time limit
+- **Force Export Hold** - keeps the Force Export session active for the configured duration
 - **Force Import** - import from grid at a configurable target kW, dynamically adjusting battery charge to offset live PV so total grid draw stays at the target; stops at cutoff SoC
-- **Force Import Hold** - keeps Force Import running indefinitely after the duration expires; turn on before starting Force Import for continuous importing without a time limit
+- **Force Import Hold** - keeps the Force Import session active for the configured duration
 - **Peak Shaving (optional)** - off by default; uses existing dispatch controls to reduce grid import towards a target. See [setup, behaviour and simulation limits](docs/peak-shaving.md) before enabling.
 - **Excess Export** - charge the battery with PV power that would otherwise be clipped by the inverter AC output limit; automatically pauses when the house starts drawing from the grid and resumes once PV recovers
 - **Dispatch PV Enabled** - enable or disable the inverter's PV coupling during an active dispatch (useful for shedding solar in negative-price periods); defaults to on (PV enabled). Toggling it while a dispatch is running applies immediately; otherwise it takes effect on the next dispatch
@@ -481,22 +481,30 @@ These are read-only sensor views of the scheduling registers. The writable equiv
 | Underfrequency Protection L3 *(disabled)* | Hz | 60 s | |
 | Underfrequency Protection L3 Time *(disabled)* | ms | 60 s | |
 
+### Diagnostic readings
+
+Battery Power and Battery Current are positive on discharge and negative on charge. Battery Status includes separate raw charge and discharge flags, and Inverter Work Mode Name labels the existing numeric mode. The optional System Mode diagnostic shows the inverter's configured AC, DC or Hybrid coupling.
+
+The additional BMS, PV Inverter Energy, PV System Total Energy and System Mode readings are polled individually only when their entities are enabled. Confirm register support and meter direction on the target model before using a new diagnostic as an automation or Energy dashboard input.
+
 ### Controls
 
 | Entity | Type | Description |
 |--------|------|-------------|
 | Force Charging | Switch | Charge battery from grid at configured power/duration/cutoff SoC |
-| Force Charging Hold | Switch | Keeps Force Charging running indefinitely after the duration expires; turn on before starting Force Charging |
+| Force Charging Hold | Switch | Keeps the Force Charging session active for the configured duration |
 | Force Discharging | Switch | Discharge battery at configured power/duration/cutoff SoC; auto-stops ~1% above cutoff to guarantee no grid draw during transition |
 | Force Discharging Hold | Switch | Keeps Force Discharging running for the full configured duration; prevents early stop when the SoC target is reached |
 | Force Export | Switch | Export to grid at a target feed-in rate (kW); battery discharge dynamically adjusted for live house load and PV; stops when duration expires or battery hits cutoff SoC |
-| Force Export Hold | Switch | Keeps Force Export running indefinitely after the duration expires; turn on before starting Force Export for continuous export without a time limit |
+| Force Export Hold | Switch | Keeps the Force Export session active for the configured duration |
 | Force Import | Switch | Import from grid at a target kW, dynamically adjusted for live PV so total grid draw stays at the target; stops at cutoff SoC |
-| Force Import Hold | Switch | Keeps Force Import running indefinitely after the duration expires; turn on before starting Force Import |
+| Force Import Hold | Switch | Keeps the Force Import session active for the configured duration |
 | Force Import Pause | Binary sensor | On when Force Import is automatically paused; resumes automatically when conditions are met |
 | Dispatch | Switch | Generic dispatch - mode, power, SoC target, and duration all configurable independently |
 | Excess Export | Switch | Charge battery with PV power that would otherwise be clipped by the AC output limit; auto-pauses when house draws from grid, auto-resumes when PV recovers |
 | Excess Export Pause | Binary sensor | On when Excess Export has automatically paused due to grid import |
+| Excess Export Duration | Number | Optional auto-stop in minutes. The default of zero keeps the controller enabled until turned off. |
+| Excess Export Countdown | Sensor | Time to the optional auto-stop, including while temporarily paused. |
 | Dispatch PV Enabled | Switch | Enable (on, default) or disable (off) the inverter's PV coupling during dispatch via register 0x088A; toggling while a dispatch is active writes the register immediately, otherwise it applies on the next dispatch |
 | Force Charging Power | Number | Charging power in kW (0–20) |
 | Force Charging Duration | Number | Duration in minutes (0–480, step 5) |
@@ -536,9 +544,9 @@ These are read-only sensor views of the scheduling registers. The writable equiv
 
 You can adjust Power, SoC target, or Duration for an active Force Charging, Force Discharging, Force Export, or Force Import session without toggling the switch:
 
-1. Change the relevant number slider (e.g. set Duration to 120 min).
+Changing a duration moves the stop time. Power and SoC changes keep the remaining duration. Force Export and Force Import apply power target edits on the next grid update, so several edits within one poll can share one inverter write. Cutoff edits retain the active power setpoint unless the new cutoff calls for a stop. Excess Export duration changes only re-arm its Home Assistant timer. The inverter's existing five-minute watchdog continues to cover loss of Home Assistant control.
 
-The integration immediately rewrites the dispatch registers with the updated values and restarts the countdown from the new duration. The per-mode countdown sensor reflects the change within the next 5 s poll.
+The four Hold switches remember their preferences across reloads and restarts. A Hold preference leaves the configured duration in effect. A restored preference does not restart an inverter dispatch.
 
 ---
 

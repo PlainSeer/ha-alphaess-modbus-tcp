@@ -22,10 +22,12 @@ from .const import (
     DISPATCH_FLOW_DIRECTION,
     DISPATCH_PV_UNCHANGED,
 )
-from .modbus_client import AlphaESSModbusClient
-from .house_load import HouseLoadSample, POWER_KEYS
+from .modbus_client import AlphaESSModbusClient, ModbusIllegalAddress
+from .house_load import HouseLoadSample, house_load_input_keys
 
 _LOGGER = logging.getLogger(__name__)
+_UNSUPPORTED_AFTER = 3
+_UNSUPPORTED_RETRY_S = 600.0
 
 # Per-register scan intervals — used for stale-entry expiry.
 _SCAN_INTERVAL_MAP: dict[str, float] = {r.key: r.scan_interval for r in SENSOR_REGISTERS}
@@ -36,7 +38,7 @@ def _reg_width(reg: ModbusSensorDef) -> int:
 
 
 def _group_registers(
-    regs: list[ModbusSensorDef],
+    regs: list[ModbusSensorDef], split_before: set[int] | None = None,
 ) -> list[tuple[int, int, list[ModbusSensorDef]]]:
     """Group numeric (non-string) registers into (start, count, members) block tuples.
 
@@ -51,10 +53,12 @@ def _group_registers(
     g_end = g_start + _reg_width(sorted_regs[0]) - 1
     g_regs: list[ModbusSensorDef] = [sorted_regs[0]]
 
+    cuts = sorted(split_before or ())
     for reg in sorted_regs[1:]:
         r_end = reg.address + _reg_width(reg) - 1
         # Merge if gap <= 4 registers and total span stays within 100
-        if reg.address <= g_end + 5 and r_end - g_start + 1 <= 100:
+        crosses_cut = any(g_start < cut <= reg.address for cut in cuts)
+        if not crosses_cut and reg.address <= g_end + 5 and r_end - g_start + 1 <= 100:
             g_regs.append(reg)
             g_end = max(g_end, r_end)
         else:
@@ -67,7 +71,9 @@ def _group_registers(
     return groups
 
 
-def _decode_block(reg: ModbusSensorDef, raw: list[int], offset: int) -> Any:
+def _decode_block(
+    reg: ModbusSensorDef, raw: list[int], offset: int, *, scale: float | None = None,
+) -> Any:
     """Decode a register value from a raw uint16 word slice (block read result)."""
     dt = reg.data_type
     if dt == "int16":
@@ -85,7 +91,7 @@ def _decode_block(reg: ModbusSensorDef, raw: list[int], offset: int) -> Any:
         v = (raw[offset] << 16) | raw[offset + 1]
     else:
         raise ValueError(f"Block decode: unsupported type {dt!r}")
-    value = (v + reg.offset) * reg.scale
+    value = (v + reg.offset) * (reg.scale if scale is None else scale)
     if reg.precision is not None:
         value = round(value, reg.precision)
         if reg.precision == 0:
@@ -116,6 +122,9 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._entry_id = config_entry.entry_id
         self.client = client
         self._last_polled: dict[str, float] = {}
+        self._block_splits: set[int] = set()
+        self._illegal_replies: dict[str, int] = {}
+        self._unsupported_until: dict[str, float] = {}
         self.optional_poll_keys: set[str] = set()
         self._optional_last_attempt: dict[str, float] = {}
         self.house_load_sample = HouseLoadSample()
@@ -128,6 +137,7 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             saved_ac_limit = next(iter(INVERTER_AC_LIMIT_OPTIONS))
         self.set_ac_limit(saved_ac_limit)
         self.ee_paused: bool = False
+        self.excess_export_deadline: float | None = None
         self.fi_paused: bool = False
         self.dispatch_started_at: datetime | None = None
         self.dispatch_duration_s: int = 0
@@ -158,9 +168,25 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return False
             last = self._optional_last_attempt.get(reg.key, 0.0)
         else:
+            retry_at = self._unsupported_until.get(reg.key)
+            if retry_at is not None:
+                return time.monotonic() >= retry_at
             last = self._last_polled.get(reg.key, 0.0)
         interval = reg.scan_interval * self._scan_multiplier
         return (time.monotonic() - last) >= interval
+
+    def _note_illegal_address(self, reg: ModbusSensorDef, now: float) -> None:
+        count = self._illegal_replies.get(reg.key, 0) + 1
+        self._illegal_replies[reg.key] = count
+        if count >= _UNSUPPORTED_AFTER:
+            self._unsupported_until[reg.key] = now + _UNSUPPORTED_RETRY_S
+            if count == _UNSUPPORTED_AFTER:
+                _LOGGER.debug("Register %s does not answer on this model; retrying in 10 minutes", reg.key)
+
+    def _mark_polled(self, reg: ModbusSensorDef, now: float) -> None:
+        self._last_polled[reg.key] = now
+        self._illegal_replies.pop(reg.key, None)
+        self._unsupported_until.pop(reg.key, None)
 
     async def _async_update_data(self) -> dict[str, Any]:
         data: dict[str, Any] = dict(self.data or {})
@@ -177,59 +203,73 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         errors_this_cycle = 0
         failed_keys: set[str] = set()
 
-        # Block reads for numeric registers
-        for g_start, g_count, g_regs in _group_registers(numeric_regs):
+        def record_error(reg: ModbusSensorDef, err: Exception) -> None:
+            failed_keys.add(reg.key)
+            errors.append(f"{reg.key}: {err}")
+
+        def record_illegal(reg: ModbusSensorDef, err: ModbusIllegalAddress) -> None:
+            record_error(reg, err)
+            data.pop(reg.key, None)
+            self._note_illegal_address(reg, now)
+
+        async def read_group(start: int, count: int, members: list[ModbusSensorDef]) -> None:
+            nonlocal errors_this_cycle
             if errors_this_cycle > 5:
                 raise UpdateFailed(
                     f"Too many read errors this cycle ({errors_this_cycle}), aborting"
                 )
             try:
-                raw = await self.client.read_block(g_start, g_count)
-                for reg in g_regs:
-                    offset = reg.address - g_start
-                    try:
-                        value = _decode_block(reg, raw, offset)
-                        if self._model_variant == "b3" and reg.key in B3_SCALE_OVERRIDES:
-                            v_raw = raw[offset]
-                            if reg.data_type == "int16" and v_raw > 32767:
-                                v_raw -= 65536
-                            elif reg.data_type == "int32":
-                                v_raw = (raw[offset] << 16) | raw[offset + 1]
-                                if v_raw > 2147483647:
-                                    v_raw -= 4294967296
-                            value = (v_raw + reg.offset) * B3_SCALE_OVERRIDES[reg.key]
-                            if reg.precision is not None:
-                                value = round(value, reg.precision)
-                                if reg.precision == 0:
-                                    value = int(value)
-                        data[reg.key] = value
-                        self._last_polled[reg.key] = now
-                    except Exception as decode_err:
-                        failed_keys.add(reg.key)
-                        errors.append(f"{reg.key}: decode error: {decode_err}")
-                        errors_this_cycle += 1
-                        _LOGGER.debug("Decode error for %s: %s", reg.key, decode_err)
+                raw = await self.client.read_block(start, count)
+            except ModbusIllegalAddress as err:
+                if len(members) == 1:
+                    record_illegal(members[0], err)
+                    return
+                # Remember a boundary even when all individual registers work:
+                # the rejected address can be an unused gap between them.
+                middle = len(members) // 2
+                self._block_splits.add(members[middle].address)
+                for part in (members[:middle], members[middle:]):
+                    part_start = part[0].address
+                    part_end = max(reg.address + _reg_width(reg) for reg in part)
+                    await read_group(part_start, part_end - part_start, part)
+                return
             except ModbusException as err:
                 errors_this_cycle += 1
-                for reg in g_regs:
-                    failed_keys.add(reg.key)
-                    errors.append(f"{reg.key}: {err}")
-                _LOGGER.debug("Block read error at %#06x+%d: %s", g_start, g_count, err)
+                for reg in members:
+                    record_error(reg, err)
+                _LOGGER.debug("Block read error at %#06x+%d: %s", start, count, err)
+                return
 
-        # Individual reads for string registers
+            for reg in members:
+                scale = B3_SCALE_OVERRIDES.get(reg.key) if self._model_variant == "b3" else None
+                try:
+                    data[reg.key] = _decode_block(reg, raw, reg.address - start, scale=scale)
+                    self._mark_polled(reg, now)
+                except (IndexError, ValueError, TypeError) as err:
+                    errors_this_cycle += 1
+                    record_error(reg, err)
+                    _LOGGER.debug("Decode error for %s: %s", reg.key, err)
+
+        normal_regs = [r for r in numeric_regs if r.key not in self._unsupported_until]
+        retry_regs = [r for r in numeric_regs if r.key in self._unsupported_until]
+        for start, count, members in _group_registers(normal_regs, self._block_splits):
+            await read_group(start, count, members)
+        for reg in retry_regs:
+            await read_group(reg.address, _reg_width(reg), [reg])
+
         for reg in string_regs:
             if errors_this_cycle > 5:
                 raise UpdateFailed(
                     f"Too many read errors this cycle ({errors_this_cycle}), aborting"
                 )
             try:
-                data[reg.key] = await self.client.read_register(
-                    reg.address, reg.data_type, reg.count
-                )
-                self._last_polled[reg.key] = now
+                data[reg.key] = await self.client.read_register(reg.address, reg.data_type, reg.count)
+                self._mark_polled(reg, now)
+            except ModbusIllegalAddress as err:
+                record_illegal(reg, err)
             except ModbusException as err:
                 errors_this_cycle += 1
-                errors.append(f"{reg.key}: {err}")
+                record_error(reg, err)
                 _LOGGER.debug("Modbus read error for %s: %s", reg.key, err)
 
         if errors and not data:
@@ -264,8 +304,7 @@ class AlphaESSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if si and (now - last) > 5 * si * max(1.0, self._scan_multiplier):
                 del data[key]
 
-        needed = (("power_grid",) if data.get("inverter_work_mode") == 2 else POWER_KEYS)
-        needed = (*needed, "inverter_work_mode")
+        needed = house_load_input_keys(data)
         if not hasattr(self, "house_load_sample"):
             self.house_load_sample = HouseLoadSample()
         self.house_load_sample.update(

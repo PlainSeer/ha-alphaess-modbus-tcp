@@ -195,6 +195,7 @@ def test_single_worker_coalesces_slow_updates_and_reads_newest_target():
         transport = s.client._client
         original = transport.write_registers.side_effect
         sw._fe_last_power_raw = s.registers[2] = sw._acknowledged[2] = 33000
+        sw._set_grid_servo_baseline(33000)
         s.c.data['power_grid'] = 0
         entered, release = asyncio.Event(), asyncio.Event()
         async def write(*a, **kw):
@@ -202,7 +203,8 @@ def test_single_worker_coalesces_slow_updates_and_reads_newest_target():
             await asyncio.wait_for(release.wait(), 2)
             return await original(*a, **kw)
         transport.write_registers.side_effect = write
-        sw._queue_servo()
+        s.c._last_polled["power_grid"] = s.now + 1
+        sw._observe_grid_target(s.c.data, exporting=True)
         await entered.wait()
         worker = sw._servo_worker
         for target in (1, 2, 3, 4):

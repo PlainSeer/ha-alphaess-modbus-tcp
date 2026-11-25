@@ -9,7 +9,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .house_energy import finite
-from .house_load import POWER_KEYS
+from .house_load import house_load_input_keys
 
 MAX_AGE = 10.0
 HOLD_SECONDS = 4.0
@@ -127,11 +127,13 @@ class AlphaESSHouseLoadComparisonSensor(CoordinatorEntity, SensorEntity):
         data = c.data or {}
         sample = getattr(c, "house_load_sample", None)
         mode = finite(data.get("inverter_work_mode"))
-        if mode != self._mode:
+        keys = tuple(key for key in house_load_input_keys(data) if key != "inverter_work_mode")
+        sample_mode = (mode, keys)
+        if sample_mode != self._mode:
             self._filter.clear("mode_changed")
-            self._mode = mode
+            self._last_stamps = None
+            self._mode = sample_mode
         polled = getattr(c, "_last_polled", {})
-        keys = ("power_grid",) if mode == 2 else POWER_KEYS
         stamps = {key: finite(polled.get(key)) for key in keys}
         mode_stamp = finite(polled.get("inverter_work_mode"))
         if (not c.last_update_success or sample is None or sample.reason == "missing"

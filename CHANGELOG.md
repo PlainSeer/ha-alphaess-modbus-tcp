@@ -1,5 +1,13 @@
 # Changelog
 
+### v1.21.4 — Connection, dispatch and diagnostics
+
+- Promote the v1.21.4 beta changes, including connection reconfiguration, AC-limit persistence, clock encoding, Hold preference restore, safer restart/reset defaults and targeted raw writes.
+- Incorporate selected implementation changes from upstream v1.16.0. Isolate rejected Modbus addresses, recover valid readings and retain communication-error handling.
+- Calculate house load from PV and battery power during a UPS outage. Keep the existing house-load sensors and daily accumulator.
+- Improve Force Export and Force Import target tracking and setpoint edits. Add an optional Excess Export duration and countdown, with auto-stop disabled at zero.
+- Add readable work mode, battery status flags, opt-in BMS/PV diagnostics and Hillview's read-only System Mode. Correct battery sign descriptions and retain the identity and register of each existing energy sensor.
+
 ### v1.21.4b4 — Upstream connection and dispatch improvements (beta)
 
 - Backport upstream connection reconfiguration and the Marketplace category.
